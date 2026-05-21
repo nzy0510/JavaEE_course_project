@@ -55,10 +55,8 @@ public class DataBootstrapService {
                         atom.setStatus("ACTIVE");
                         atoms.add(atom);
                     }
-                    for (KnowledgeAtom atom : atoms) {
-                        knowledgeAtomMapper.insert(atom);
-                        total++;
-                    }
+                    atoms.forEach(knowledgeAtomMapper::insert);
+                    total += atoms.size();
                 }
             }
             log.info("种子数据加载完成，共 {} 条", total);

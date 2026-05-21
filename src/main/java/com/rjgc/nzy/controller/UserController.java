@@ -7,6 +7,7 @@ import com.rjgc.nzy.entity.User;
 import com.rjgc.nzy.service.UserService;
 import jakarta.servlet.http.HttpSession;
 import lombok.RequiredArgsConstructor;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -17,7 +18,7 @@ public class UserController {
     private final UserService userService;
 
     @PostMapping("/register")
-    public Result<String> register(@RequestBody RegisterRequest request) {
+    public Result<String> register(@Valid @RequestBody RegisterRequest request) {
         try {
             userService.register(request.getUsername(), request.getPassword());
             return Result.ok("注册成功");
@@ -27,9 +28,10 @@ public class UserController {
     }
 
     @PostMapping("/login")
-    public Result<User> login(@RequestBody LoginRequest request, HttpSession session) {
+    public Result<User> login(@Valid @RequestBody LoginRequest request, HttpSession session) {
         try {
             User user = userService.login(request.getUsername(), request.getPassword());
+            user.setPassword(null);
             session.setAttribute("user", user);
             return Result.ok(user);
         } catch (RuntimeException e) {

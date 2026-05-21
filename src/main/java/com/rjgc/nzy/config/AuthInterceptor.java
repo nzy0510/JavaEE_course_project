@@ -18,8 +18,9 @@ public class AuthInterceptor implements HandlerInterceptor {
         HttpSession session = request.getSession(false);
         if (session == null || session.getAttribute("user") == null) {
             // AJAX request — return 401
-            if ("XMLHttpRequest".equals(request.getHeader("X-Requested-With"))) {
+            if (request.getRequestURI().startsWith("/api/")) {
                 response.setStatus(401);
+                response.setContentType("application/json;charset=UTF-8");
                 response.getWriter().write("{\"code\":401,\"message\":\"未登录\"}");
                 return false;
             }

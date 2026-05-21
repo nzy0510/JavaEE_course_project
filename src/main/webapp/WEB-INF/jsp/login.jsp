@@ -38,16 +38,23 @@
 <script>
 $('#loginForm').on('submit', function(e) {
     e.preventDefault();
-    $.post('/api/user/login', {
-        username: $('#username').val(),
-        password: $('#password').val()
-    }, function(res) {
-        if (res.code === 200) {
-            window.location.href = '/index';
-        } else {
-            $('#errorMsg').removeClass('d-none').text(res.message);
+    $.ajax({
+        url: '/api/user/login',
+        type: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({
+            username: $('#username').val(),
+            password: $('#password').val()
+        }),
+        dataType: 'json',
+        success: function(res) {
+            if (res.code === 200) {
+                window.location.href = '/index';
+            } else {
+                $('#errorMsg').removeClass('d-none').text(res.message);
+            }
         }
-    }, 'json');
+    });
 });
 </script>
 </body>

@@ -47,19 +47,26 @@ $('#registerForm').on('submit', function(e) {
         $('#errorMsg').removeClass('d-none').text('两次密码输入不一致');
         return;
     }
-    $.post('/api/user/register', {
-        username: $('#username').val(),
-        password: $('#password').val()
-    }, function(res) {
-        if (res.code === 200) {
-            $('#successMsg').removeClass('d-none').text('注册成功！即将跳转登录...');
-            $('#errorMsg').addClass('d-none');
-            setTimeout(function() { window.location.href = '/login'; }, 1500);
-        } else {
-            $('#errorMsg').removeClass('d-none').text(res.message);
-            $('#successMsg').addClass('d-none');
+    $.ajax({
+        url: '/api/user/register',
+        type: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({
+            username: $('#username').val(),
+            password: $('#password').val()
+        }),
+        dataType: 'json',
+        success: function(res) {
+            if (res.code === 200) {
+                $('#successMsg').removeClass('d-none').text('注册成功！即将跳转登录...');
+                $('#errorMsg').addClass('d-none');
+                setTimeout(function() { window.location.href = '/login'; }, 1500);
+            } else {
+                $('#errorMsg').removeClass('d-none').text(res.message);
+                $('#successMsg').addClass('d-none');
+            }
         }
-    }, 'json');
+    });
 });
 </script>
 </body>

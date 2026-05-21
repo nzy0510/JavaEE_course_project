@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -62,8 +63,8 @@ public class KnowledgeController {
     @PostMapping("/batch-import")
     public Result<String> batchImport(@RequestParam("file") MultipartFile file) {
         try {
-            String content = new String(file.getBytes());
-            JSONArray array = JSON.parseArray(content);
+            String content = new String(file.getBytes(), StandardCharsets.UTF_8);
+            JSONArray array = parseImportArray(content);
             List<KnowledgeAtom> atoms = new ArrayList<>();
             List<String> errors = new ArrayList<>();
 
@@ -85,7 +86,7 @@ public class KnowledgeController {
                 atom.setSubject(subject);
                 atom.setCategory(obj.getString("category"));
                 atom.setDifficulty(obj.getString("difficulty"));
-                atom.setTags(obj.getString("tags"));
+                atom.setTags(readTags(obj));
                 atom.setPrinciples(principles);
                 atom.setPitfalls(obj.getString("pitfalls"));
                 atoms.add(atom);
@@ -100,5 +101,44 @@ public class KnowledgeController {
         } catch (Exception e) {
             return Result.error("文件解析失败: " + e.getMessage());
         }
+    }
+
+    private JSONArray parseImportArray(String content) {
+        String normalized = content == null ? "" : content.strip();
+        if (normalized.startsWith("\uFEFF")) {
+            normalized = normalized.substring(1).strip();
+        }
+        Object parsed = JSON.parse(normalized);
+        if (parsed instanceof JSONArray array) {
+            return array;
+        }
+        if (parsed instanceof JSONObject object) {
+            JSONArray wrappedArray = firstArray(object, "atoms", "items", "records", "data", "list");
+            if (wrappedArray != null) {
+                return wrappedArray;
+            }
+            JSONArray array = new JSONArray();
+            array.add(object);
+            return array;
+        }
+        throw new IllegalArgumentException("JSON 顶层必须是数组或知识条目对象");
+    }
+
+    private JSONArray firstArray(JSONObject object, String... keys) {
+        for (String key : keys) {
+            Object value = object.get(key);
+            if (value instanceof JSONArray array) {
+                return array;
+            }
+        }
+        return null;
+    }
+
+    private String readTags(JSONObject object) {
+        Object value = object.get("tags");
+        if (value instanceof JSONArray array) {
+            return array.toJSONString();
+        }
+        return object.getString("tags");
     }
 }

@@ -1,2 +1,0 @@
--- Initial category data is managed in application.yml knowledge.categories
--- Pre-seeded knowledge atoms are loaded from JSON files in knowledge_base/

@@ -21,7 +21,7 @@ public class UserService {
         }
         User user = new User();
         user.setUsername(username);
-        user.setPassword(BCrypt.hashpw(password));
+        user.setPassword(BCrypt.hashpw(password, BCrypt.gensalt(10)));
         userMapper.insert(user);
         return user;
     }

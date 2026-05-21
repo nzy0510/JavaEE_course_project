@@ -10,3 +10,6 @@ target/
 .project
 .classpath
 .vscode/
+.env
+.env.*
+!.env.example

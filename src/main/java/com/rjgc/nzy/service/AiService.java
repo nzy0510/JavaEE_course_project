@@ -3,6 +3,7 @@ package com.rjgc.nzy.service;
 import com.rjgc.nzy.entity.KnowledgeAtom;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -13,7 +14,7 @@ import java.util.stream.Collectors;
 public class AiService {
 
     private final KnowledgeService knowledgeService;
-    private final OpenAiChatModel chatModel;
+    private final ObjectProvider<OpenAiChatModel> chatModelProvider;
 
     public String ask(String question) {
         List<KnowledgeAtom> atoms = knowledgeService.searchForAi(question, 5);
@@ -39,6 +40,17 @@ public class AiService {
 
                 请用中文回答，简洁明了。""".formatted(context, question);
 
-        return chatModel.generate(prompt);
+        OpenAiChatModel chatModel = chatModelProvider.getIfAvailable();
+        if (chatModel == null) {
+            return "AI 服务未配置：请设置环境变量 DEEPSEEK_API_KEY 后重启应用。"
+                    + "\n\n当前检索到的知识库内容：\n" + context;
+        }
+
+        try {
+            return chatModel.generate(prompt);
+        } catch (RuntimeException e) {
+            return "AI 服务调用失败，请检查 DEEPSEEK_API_KEY、网络或模型额度配置。"
+                    + "\n\n当前检索到的知识库内容：\n" + context;
+        }
     }
 }

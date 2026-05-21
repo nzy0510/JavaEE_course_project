@@ -4,18 +4,19 @@ server:
 spring:
   application:
     name: knowledge-base-system
+  autoconfigure:
+    exclude: dev.langchain4j.openai.spring.AutoConfig
 
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/knowledge_base_db?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&createDatabaseIfNotExist=true
-    username: root
-    password: root
+    url: ${DB_URL:jdbc:mysql://localhost:3306/knowledge_base_db?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&createDatabaseIfNotExist=true&rewriteBatchedStatements=true}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
 
   sql:
     init:
       mode: always
       schema-locations: classpath:schema.sql
-      data-locations: classpath:data.sql
 
   mvc:
     view:
@@ -33,29 +34,13 @@ mybatis-plus:
     map-underscore-to-camel-case: true
 
 knowledge:
-  categories:
-    - Java基础
-    - Spring
-    - SpringBoot
-    - MyBatis
-    - MySQL
-    - Redis
-    - JVM
-    - 并发编程
-    - 分布式系统
-    - 微服务
-    - 设计模式
-    - 数据结构与算法
-    - 计算机网络
-    - 操作系统
-    - 前端技术
-    - 软件工程
+  categories: Java基础,Spring,SpringBoot,MyBatis,MySQL,Redis,JVM,并发编程,分布式系统,微服务,设计模式,数据结构与算法,计算机网络,操作系统,前端技术,软件工程
 
 langchain4j:
   open-ai:
     chat-model:
       base-url: https://api.deepseek.com/v1
-      api-key: ${DEEPSEEK_API_KEY:your-api-key}
+      api-key: ${DEEPSEEK_API_KEY:}
       model-name: deepseek-chat
       temperature: 0.7
       max-tokens: 2000

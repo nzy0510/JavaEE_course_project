@@ -1,0 +1,34 @@
+[
+  {
+    "subject": "MySQL InnoDB 索引底层数据结构",
+    "category": "MySQL",
+    "difficulty": "困难",
+    "tags": "[\"MySQL\",\"索引\",\"B+树\"]",
+    "principles": "MySQL InnoDB 引擎使用 B+ 树作为索引的数据结构。B+ 树的特点：1. 所有数据存储在叶子节点，非叶子节点只存键值和子节点指针；2. 叶子节点之间通过双向链表连接，支持范围查询；3. 阶数（m）由页大小（默认16KB）和键值大小决定。主键索引（聚簇索引）的叶子节点存储完整数据行；二级索引的叶子节点存储主键值，查询时需要回表。覆盖索引：当查询的所有列都在索引中时，不需要回表，查询效率最高。",
+    "pitfalls": "B+ 树的高度一般在 3-4 层（能支撑千万级数据），索引选择时优先考虑选择性高的列。复合索引遵循最左前缀原则。大批量数据插入可能导致页分裂，影响性能。"
+  },
+  {
+    "subject": "MySQL 事务隔离级别",
+    "category": "MySQL",
+    "difficulty": "中等",
+    "tags": "[\"MySQL\",\"事务\",\"隔离级别\"]",
+    "principles": "MySQL InnoDB 支持四种事务隔离级别：1. READ UNCOMMITTED（读未提交）— 可能产生脏读；2. READ COMMITTED（读已提交）— 解决脏读，可能出现不可重复读和幻读；3. REPEATABLE READ（可重复读，InnoDB 默认）— 解决脏读和不可重复读，通过 MVCC 和临键锁（Next-Key Lock）解决大部分幻读；4. SERIALIZABLE（串行化）— 解决所有问题但性能最差。MVCC（多版本并发控制）通过隐藏列 DB_TRX_ID、DB_ROLL_PTR 和 ReadView 实现快照读。",
+    "pitfalls": "REPEATABLE READ 下 SELECT 是快照读，不阻塞但可能读到旧版本。UPDATE/DELETE/INSERT 走当前读会加锁。幻读在 REPEATABLE READ 下通过临键锁基本解决，但快照读场景仍可能出现。"
+  },
+  {
+    "subject": "SQL 语句执行过程解析",
+    "category": "MySQL",
+    "difficulty": "中等",
+    "tags": "[\"MySQL\",\"SQL执行\",\"架构\"]",
+    "principles": "MySQL 的执行架构分为两层：Server 层和存储引擎层。SQL 执行流程：1. 连接器 — 建立连接、权限验证；2. 查询缓存（MySQL 8.0 已移除）— 缓存查询结果；3. 分析器 — 词法分析和语法分析，生成解析树；4. 优化器 — 选择索引、确定连接顺序、生成执行计划；5. 执行器 — 调用存储引擎接口执行，逐行扫描或索引查找。EXPLAIN 命令可查看执行计划，关注 type（访问类型，从好到差：const > eq_ref > ref > range > index > ALL）、key（使用的索引）、rows（扫描行数）、Extra（额外信息如 Using filesort、Using temporary）。",
+    "pitfalls": "EXPLAIN 的 rows 是估计值不是精确值。即使使用了索引，Extra 中出现 Using filesort 或 Using temporary 也需要警惕。JOIN 查询执行顺序不一定按 SQL 书写顺序，由优化器决定。"
+  },
+  {
+    "subject": "数据库连接池的工作原理",
+    "category": "MySQL",
+    "difficulty": "中等",
+    "tags": "[\"MySQL\",\"连接池\",\"性能优化\"]",
+    "principles": "数据库连接池维护一组预先创建好的数据库连接，应用程序需要时直接从池中获取，用完后归还，避免频繁创建和销毁连接的开销。常用实现：HikariCP（Spring Boot 默认，性能最优）、Druid（阿里出品，监控功能丰富）、C3P0、DBCP。关键参数：maximumPoolSize（最大连接数）、minimumIdle（最小空闲连接数）、idleTimeout（空闲超时）、connectionTimeout（获取连接超时）、maxLifetime（连接最大存活时间）。HikariCP 通过 ConcurrentBag（无锁并发容器）和 FastList 优化了并发性能。",
+    "pitfalls": "最大连接数不宜过大（CPU 核数*2+磁盘数），否则数据库 CPU 会花在连接切换上。连接泄漏是最常见问题——获取连接后未 close 导致连接用完。Druid 的监控页面可以快速定位连接泄漏。"
+  }
+]

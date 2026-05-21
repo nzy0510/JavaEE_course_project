@@ -1,0 +1,42 @@
+[
+  {
+    "subject": "什么是控制反转（IoC）？",
+    "category": "Spring",
+    "difficulty": "中等",
+    "tags": "[\"Spring\",\"IoC\",\"核心概念\"]",
+    "principles": "控制反转（Inversion of Control）是 Spring 框架的核心思想。传统编程中，对象由程序主动创建和管理；而在 IoC 模式下，对象的创建和管理权交给容器。Spring 通过 IoC 容器管理 Bean 的生命周期和依赖关系。实现方式主要有两种：依赖注入（DI）和依赖查找。依赖注入是最常用的方式，包括构造器注入、Setter 注入和接口注入。IoC 的好处是降低耦合度、提高可测试性、支持热插拔。",
+    "pitfalls": "不要把 IoC 和 DI 混为一谈，DI 只是 IoC 的一种实现方式。IoC 是思想，DI 是手段。"
+  },
+  {
+    "subject": "什么是面向切面编程（AOP）？",
+    "category": "Spring",
+    "difficulty": "中等",
+    "tags": "[\"Spring\",\"AOP\",\"核心概念\"]",
+    "principles": "面向切面编程（Aspect-Oriented Programming）是一种编程范式，用于将横切关注点（如日志、事务、安全）与核心业务逻辑分离。Spring AOP 基于动态代理实现：如果目标类实现了接口，使用 JDK 动态代理；如果没有实现接口，使用 CGLib 代理。关键概念包括切面（Aspect）、连接点（Join Point）、通知（Advice）、切入点（Pointcut）和织入（Weaving）。通知类型有前置通知、后置通知、环绕通知、异常通知和返回通知。",
+    "pitfalls": "Spring AOP 默认使用代理方式，调用同一个类中的方法不会触发代理，导致 AOP 失效。需要使用 AspectJ 编译时织入或将方法拆分到不同类中解决。"
+  },
+  {
+    "subject": "Spring Bean 的生命周期是怎样的？",
+    "category": "Spring",
+    "difficulty": "困难",
+    "tags": "[\"Spring\",\"Bean\",\"生命周期\"]",
+    "principles": "Spring Bean 的生命周期包括以下阶段：1. 实例化（Instantiation）— 通过反射创建 Bean 实例；2. 属性赋值（Populate Properties）— 注入依赖属性；3. 回调 Aware 接口（如 BeanNameAware、BeanFactoryAware、ApplicationContextAware）；4. 前置处理器（BeanPostProcessor.postProcessBeforeInitialization）；5. 初始化（InitializingBean.afterPropertiesSet 或 @PostConstruct 或 init-method）；6. 后置处理器（BeanPostProcessor.postProcessAfterInitialization）；7. Bean 就绪可用；8. 销毁（DisposableBean.destroy 或 @PreDestroy 或 destroy-method）。",
+    "pitfalls": "Bean 实例化和初始化是两个不同的阶段。代理对象的创建发生在后置处理器阶段。如果 Bean 作用域为 prototype，Spring 不会管理销毁阶段。"
+  },
+  {
+    "subject": "@Autowired 和 @Resource 的区别",
+    "category": "Spring",
+    "difficulty": "简单",
+    "tags": "[\"Spring\",\"注解\",\"依赖注入\"]",
+    "principles": "@Autowired 是 Spring 提供的注解，默认按类型（byType）注入。如果需要按名称注入，需配合 @Qualifier 使用。@Resource 是 JDK 的注解（javax.annotation），默认按名称（byName）注入，如果找不到名称匹配再按类型匹配。@Autowired 的 required 属性可设为 false 表示可选注入；@Resource 没有此选项。使用场景：有多个同类型 Bean 时，@Autowired+@Qualifier 更明确；@Resource 适合需要按名称注入的简单场景。",
+    "pitfalls": "在只有一个实现类的情况下两者行为类似，但在多实现时 @Autowired 需要显式指定。@Resource 按名称匹配失败时会退化为按类型匹配，可能注入非预期的 Bean。"
+  },
+  {
+    "subject": "Spring Boot 自动配置原理",
+    "category": "SpringBoot",
+    "difficulty": "困难",
+    "tags": "[\"SpringBoot\",\"自动配置\",\"起步依赖\"]",
+    "principles": "Spring Boot 自动配置基于 @EnableAutoConfiguration 和 spring.factories 机制。核心流程：1. @SpringBootApplication 包含 @EnableAutoConfiguration；2. 它导入 AutoConfigurationImportSelector；3. 该选择器读取 META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports 文件（Spring Boot 3.x 方式）；4. 根据 @Conditional 注解（如 @ConditionalOnClass、@ConditionalOnMissingBean）判断是否满足条件；5. 满足条件则注册对应的配置类。开发者可以用 @ConditionalOnMissingBean 覆盖默认配置，或使用 spring.autoconfigure.exclude 排除不需要的自动配置。",
+    "pitfalls": "自动配置的加载顺序不可控，如果有多个配置类修改同一种 Bean，可能出现覆盖导致预期之外的行为。建议用 debug=true 查看自动配置报告。"
+  }
+]

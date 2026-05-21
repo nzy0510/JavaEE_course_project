@@ -17,7 +17,7 @@ public class UserController {
     private final UserService userService;
 
     @PostMapping("/register")
-    public Result<Void> register(@RequestBody RegisterRequest request) {
+    public Result<String> register(@RequestBody RegisterRequest request) {
         try {
             userService.register(request.getUsername(), request.getPassword());
             return Result.ok("注册成功");

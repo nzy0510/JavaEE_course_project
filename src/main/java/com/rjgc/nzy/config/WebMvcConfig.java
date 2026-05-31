@@ -18,6 +18,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
                 .excludePathPatterns(
                         "/login",
                         "/register",
+                        "/api/user/captcha",
                         "/api/user/login",
                         "/api/user/register",
                         "/css/**",

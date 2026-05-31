@@ -22,7 +22,8 @@ class AiServiceTest {
         KnowledgeAtom atom = new KnowledgeAtom();
         atom.setSubject("依赖注入");
         atom.setPrinciples("依赖注入由容器负责创建和注入对象依赖。");
-        when(knowledgeService.searchForAi(eq("什么是依赖注入？"), eq(5))).thenReturn(List.of(atom));
+        when(knowledgeService.searchForAiWithScores(eq("什么是依赖注入？"), eq(5)))
+                .thenReturn(List.of(new KnowledgeSearchResult(atom, 15)));
         when(provider.getIfAvailable()).thenReturn(null);
 
         AiService service = new AiService(knowledgeService, provider);
@@ -30,6 +31,7 @@ class AiServiceTest {
         String answer = service.ask("什么是依赖注入？");
 
         assertThat(answer).contains("DEEPSEEK_API_KEY");
+        assertThat(answer).contains("匹配分：15");
         assertThat(answer).contains("依赖注入由容器负责创建和注入对象依赖");
     }
 }

@@ -9,6 +9,13 @@
     <style>
         body { background-color: #f5f5f5; }
         .login-card { max-width: 400px; margin: 100px auto; }
+        .captcha-img {
+            width: 120px;
+            height: 42px;
+            cursor: pointer;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+        }
     </style>
 </head>
 <body>
@@ -25,6 +32,13 @@
                     <label for="password" class="form-label">密码</label>
                     <input type="password" class="form-control" id="password" name="password" required>
                 </div>
+                <div class="mb-3">
+                    <label for="captcha" class="form-label">验证码</label>
+                    <div class="d-flex gap-2">
+                        <input type="text" class="form-control" id="captcha" name="captcha" maxlength="4" required>
+                        <img id="captchaImage" class="captcha-img" src="/api/user/captcha" alt="验证码" title="点击刷新验证码">
+                    </div>
+                </div>
                 <div id="errorMsg" class="alert alert-danger d-none"></div>
                 <button type="submit" class="btn btn-primary w-100">登录</button>
             </form>
@@ -36,6 +50,13 @@
 </div>
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script>
+function refreshCaptcha() {
+    $('#captchaImage').attr('src', '/api/user/captcha?t=' + Date.now());
+    $('#captcha').val('');
+}
+
+$('#captchaImage').on('click', refreshCaptcha);
+
 $('#loginForm').on('submit', function(e) {
     e.preventDefault();
     $.ajax({
@@ -44,7 +65,8 @@ $('#loginForm').on('submit', function(e) {
         contentType: 'application/json',
         data: JSON.stringify({
             username: $('#username').val(),
-            password: $('#password').val()
+            password: $('#password').val(),
+            captcha: $('#captcha').val()
         }),
         dataType: 'json',
         success: function(res) {
@@ -52,7 +74,12 @@ $('#loginForm').on('submit', function(e) {
                 window.location.href = '/index';
             } else {
                 $('#errorMsg').removeClass('d-none').text(res.message);
+                refreshCaptcha();
             }
+        },
+        error: function() {
+            $('#errorMsg').removeClass('d-none').text('登录失败，请稍后重试');
+            refreshCaptcha();
         }
     });
 });

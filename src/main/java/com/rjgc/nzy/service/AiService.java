@@ -1,6 +1,5 @@
 package com.rjgc.nzy.service;
 
-import com.rjgc.nzy.entity.KnowledgeAtom;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
@@ -17,14 +16,16 @@ public class AiService {
     private final ObjectProvider<OpenAiChatModel> chatModelProvider;
 
     public String ask(String question) {
-        List<KnowledgeAtom> atoms = knowledgeService.searchForAi(question, 5);
+        List<KnowledgeSearchResult> results = knowledgeService.searchForAiWithScores(question, 5);
 
         String context;
-        if (atoms.isEmpty()) {
+        if (results.isEmpty()) {
             context = "知识库中暂无相关内容。";
         } else {
-            context = atoms.stream()
-                    .map(a -> "【" + a.getSubject() + "】" + a.getPrinciples())
+            context = results.stream()
+                    .map(result -> "【" + result.getAtom().getSubject() + "】"
+                            + "（匹配分：" + result.getScore() + "）"
+                            + result.getAtom().getPrinciples())
                     .collect(Collectors.joining("\n\n"));
         }
 

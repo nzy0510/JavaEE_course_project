@@ -11,11 +11,17 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class KnowledgeService {
+
+    private static final int MIN_AI_MATCH_SCORE = 3;
+    private static final int MAX_SEARCH_TERMS = 10;
 
     private final KnowledgeAtomMapper knowledgeAtomMapper;
 
@@ -104,25 +110,37 @@ public class KnowledgeService {
     }
 
     public List<KnowledgeAtom> searchForAi(String keyword, int limit) {
+        return searchForAiWithScores(keyword, limit).stream()
+                .map(KnowledgeSearchResult::getAtom)
+                .collect(Collectors.toList());
+    }
+
+    public List<KnowledgeSearchResult> searchForAiWithScores(String keyword, int limit) {
+        List<String> terms = extractSearchTerms(keyword);
+        if (terms.isEmpty()) {
+            return List.of();
+        }
+
         LambdaQueryWrapper<KnowledgeAtom> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(KnowledgeAtom::getStatus, "ACTIVE");
-        List<String> terms = extractSearchTerms(keyword);
-        if (!terms.isEmpty()) {
-            wrapper.and(w -> {
-                w.like(KnowledgeAtom::getSubject, keyword)
-                        .or().like(KnowledgeAtom::getPrinciples, keyword)
-                        .or().like(KnowledgeAtom::getTags, keyword);
-                for (int i = 0; i < terms.size(); i++) {
-                    String term = terms.get(i);
-                    w.or().like(KnowledgeAtom::getSubject, term)
-                            .or().like(KnowledgeAtom::getPrinciples, term)
-                            .or().like(KnowledgeAtom::getTags, term);
-                }
-            });
-        }
+        wrapper.and(w -> {
+            w.like(KnowledgeAtom::getSubject, keyword)
+                    .or().like(KnowledgeAtom::getPrinciples, keyword)
+                    .or().like(KnowledgeAtom::getTags, keyword);
+            for (String term : terms) {
+                w.or().like(KnowledgeAtom::getSubject, term)
+                        .or().like(KnowledgeAtom::getPrinciples, term)
+                        .or().like(KnowledgeAtom::getTags, term);
+            }
+        });
         wrapper.orderByDesc(KnowledgeAtom::getCreateTime);
-        wrapper.last("LIMIT " + limit);
-        return knowledgeAtomMapper.selectList(wrapper);
+        wrapper.last("LIMIT " + Math.max(limit * 10, 20));
+        return knowledgeAtomMapper.selectList(wrapper).stream()
+                .map(atom -> new KnowledgeSearchResult(atom, calculateMatchScore(keyword, terms, atom)))
+                .filter(result -> result.getScore() >= MIN_AI_MATCH_SCORE)
+                .sorted(Comparator.comparingInt(KnowledgeSearchResult::getScore).reversed())
+                .limit(limit)
+                .collect(Collectors.toList());
     }
 
     private void prepareForSave(KnowledgeAtom atom, boolean partialUpdate) {
@@ -171,18 +189,97 @@ public class KnowledgeService {
             return terms;
         }
         String normalized = keyword
+                .toLowerCase(Locale.ROOT)
                 .replaceAll("[，。！？；：、,.!?;:()（）\\[\\]【】\"']", " ")
                 .replace("什么是", " ")
                 .replace("请解释", " ")
                 .replace("请说明", " ")
+                .replace("请问", " ")
+                .replace("该如何", " ")
+                .replace("如何", " ")
+                .replace("怎么", " ")
+                .replace("怎样", " ")
+                .replace("为什么", " ")
+                .replace("怎么办", " ")
                 .replace("原理", " 原理 ")
-                .replace("的", " ");
+                .replace("思路", " 思路 ")
+                .replace("流程", " 流程 ")
+                .replace("排查", " 排查 ")
+                .replace("的", " ")
+                .replace("吗", " ")
+                .replace("呢", " ")
+                .replace("？", " ");
+
+        List<String> longChineseTerms = new ArrayList<>();
         for (String term : normalized.split("\\s+")) {
             String trimmed = term.trim();
-            if (trimmed.length() >= 2 && terms.size() < 5 && !terms.contains(trimmed)) {
-                terms.add(trimmed);
+            if (trimmed.length() >= 2) {
+                addSearchTerm(terms, trimmed);
+            }
+            if (isChineseText(trimmed) && trimmed.length() >= 5) {
+                longChineseTerms.add(trimmed);
+            }
+        }
+        for (String term : longChineseTerms) {
+            for (int i = 0; i <= term.length() - 2 && terms.size() < MAX_SEARCH_TERMS; i++) {
+                addSearchTerm(terms, term.substring(i, i + 2));
             }
         }
         return terms;
+    }
+
+    private void addSearchTerm(List<String> terms, String term) {
+        if (terms.size() < MAX_SEARCH_TERMS && !terms.contains(term)) {
+            terms.add(term);
+        }
+    }
+
+    private boolean isChineseText(String value) {
+        return value != null && value.matches(".*[\\u4e00-\\u9fa5].*");
+    }
+
+    private int calculateMatchScore(String keyword, List<String> terms, KnowledgeAtom atom) {
+        int score = 0;
+        String normalizedQuestion = normalizeForScore(keyword);
+        String subject = normalizeForScore(atom.getSubject());
+        String tags = normalizeForScore(atom.getTags());
+        String principles = normalizeForScore(atom.getPrinciples());
+        String pitfalls = normalizeForScore(atom.getPitfalls());
+
+        if (!normalizedQuestion.isEmpty()) {
+            if (subject.contains(normalizedQuestion)) {
+                score += 10;
+            }
+            if (principles.contains(normalizedQuestion)) {
+                score += 6;
+            }
+        }
+
+        for (String term : terms) {
+            String normalizedTerm = normalizeForScore(term);
+            if (normalizedTerm.isEmpty()) {
+                continue;
+            }
+            if (subject.contains(normalizedTerm)) {
+                score += 5;
+            }
+            if (tags.contains(normalizedTerm)) {
+                score += 4;
+            }
+            if (principles.contains(normalizedTerm)) {
+                score += 3;
+            }
+            if (pitfalls.contains(normalizedTerm)) {
+                score += 2;
+            }
+        }
+        return score;
+    }
+
+    private String normalizeForScore(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.toLowerCase(Locale.ROOT);
     }
 }

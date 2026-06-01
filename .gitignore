@@ -16,4 +16,4 @@ target/
 *.doc
 *.docx
 .claude/
-itom/
+*.py

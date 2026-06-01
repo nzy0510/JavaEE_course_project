@@ -1,0 +1,714 @@
+[
+  {
+    "subject": "Doublewrite Buffer 机制与作用",
+    "category": "mysql",
+    "difficulty": "困难",
+    "tags": "[\"InnoDB\",\"崩溃恢复\",\"部分写\",\"doublewrite buffer\"]",
+    "principles": "Doublewrite Buffer 是 InnoDB 用于防止数据页写入过程中出现部分写问题的机制。每次刷脏页时，先写入共享表空间的连续区域（doublewrite buffer），再分批写回数据文件。崩溃恢复时，通过 checksum 检查页完整性，若不完整则从 doublewrite buffer 中获取副本恢复。该机制解决了因磁盘写入原子性（4K/8K）与 InnoDB 页大小（16K）不匹配导致的页撕裂问题。",
+    "pitfalls": "常见误区：认为 doublewrite 会带来严重性能开销。实际上 doublewrite buffer 是顺序批量写入，性能影响不大。另一个误区是认为所有场景都需要 doublewrite，某些文件系统（如 ZFS）或 DAX 模式的持久化内存本身提供原子写，可以禁用该功能。"
+  },
+  {
+    "subject": "MySQL 默认事务隔离级别",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"事务隔离级别\",\"可重复读\",\"MVCC\",\"间隙锁\"]",
+    "principles": "MySQL 默认隔离级别是可重复读（Repeatable Read）。该级别通过 MVCC 机制提供一致性快照，解决脏读和不可重复读问题。InnoDB 还通过间隙锁（Gap Lock）与行锁组合，基本遏制了幻读。相比串行化，可重复读在数据一致性与并发性能之间取得平衡。可通过 SELECT @@transaction_isolation 查看当前隔离级别。",
+    "pitfalls": "常见误解：认为可重复读完全不解决幻读。实际上 InnoDB 通过间隙锁在大多数场景下避免了幻读。另一个误区是认为所有业务都需要串行化，实际上大部分 Web 应用可重复读已足够，过度加锁会导致线程阻塞。"
+  },
+  {
+    "subject": "逻辑删除与物理删除的区别",
+    "category": "mysql",
+    "difficulty": "简单",
+    "tags": "[\"逻辑删除\",\"物理删除\",\"数据恢复\",\"性能\"]",
+    "principles": "逻辑删除本质是更新操作，通过添加 is_deleted 或 del_flag 字段标记删除，数据仍保留在表中。物理删除使用 DELETE 语句，数据从存储引擎层移除。逻辑删除可回溯、便于审计和合规，但会导致数据膨胀和查询变慢；物理删除释放空间彻底，但高并发下可能引发锁竞争和主从延迟。关键数据（如用户账户、订单）常用逻辑删除，日志类数据适合物理删除或定时归档。",
+    "pitfalls": "常见错误：逻辑删除后未建立有效索引导致查询性能下降；或长期不清理逻辑删除数据导致磁盘压力过大。另一个陷阱是物理删除时未考虑外键约束，可能引发级联删除或错误。"
+  },
+  {
+    "subject": "int(11) 中 11 的含义",
+    "category": "mysql",
+    "difficulty": "简单",
+    "tags": "[\"数据类型\",\"int\",\"显示宽度\",\"ZEROFILL\"]",
+    "principles": "int(11) 中的 11 是显示宽度，仅在配合 ZEROFILL 时有效，不足位数用 0 填充。int 固定占用 4 字节，取值范围不变（最大约 21 亿）。MySQL 8.0.17 起已废弃 ZEROFILL 语义，因此 int(11) 与 int(5) 在实际运行中无区别。建表时应关注数据类型本身而非括号内数字，建议用户 ID 等可能超 21 亿的字段使用 bigint。",
+    "pitfalls": "常见误解：认为 int(11) 限制存储长度或取值范围。实际上 int 的存储和范围固定，括号内数字不影响任何行为。另一个误区是继续使用 ZEROFILL，该特性有性能隐患且已被废弃。"
+  },
+  {
+    "subject": "varchar 与 char 的区别",
+    "category": "mysql",
+    "difficulty": "简单",
+    "tags": "[\"数据类型\",\"varchar\",\"char\",\"存储\",\"性能\"]",
+    "principles": "char 是定长字符串，定义 char(10) 则固定占用 10 字符空间，尾部空格会被截断（除非启用 PAD_CHAR_TO_FULL_LENGTH）。varchar 是变长字符串，实际占用空间 = 内容长度 + 长度标识字节（小于 255 字节用 1 字节，否则 2 字节），最大支持 65535 字节。char 查询性能略好，适合长度固定的值（如性别、状态码）；varchar 空间利用率高，适合长度不一的场景（如用户名、地址）。注意行大小限制约 65KB。",
+    "pitfalls": "常见错误：将大文本存入 char 或超长 varchar，导致行大小超限。另一个陷阱是忽略 varchar 的长度标识字节开销，或误认为 char 总是比 varchar 快。"
+  },
+  {
+    "subject": "MySQL 数据排序实现",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"排序\",\"filesort\",\"sort buffer\",\"索引\"]",
+    "principles": "MySQL 排序有两种路径：利用索引有序性直接输出（理想情况），或通过 sort buffer 进行 filesort。filesort 流程：从引擎读取满足条件的行，将所需列放入 sort buffer 内存区域；内存不足时，分段排序并写入临时文件，最后归并排序。关键参数 sort_buffer_size 影响性能，但每个连接独占该内存，设置过大易耗尽内存。慢查询中 'Using filesort' 提示需警惕，可通过索引设计规避。",
+    "pitfalls": "常见误区：认为 filesort 一定性能差，实际上小数据量时 filesort 可能比索引扫描更快。另一个陷阱是盲目调大 sort_buffer_size，导致内存被大量连接耗尽。"
+  },
+  {
+    "subject": "EXISTS 与 IN 的区别",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"子查询\",\"EXISTS\",\"IN\",\"性能优化\"]",
+    "principles": "IN 将子查询结果集作为临时列表，主查询逐行匹配；EXISTS 采用相关子查询，对外表每条记录执行一次子查询，只判断是否存在。外表小、内表大时 EXISTS 更优（驱动行数少）；外表大、内表小时 IN 更优（小结果集哈希查找代价低）。MySQL 8.0 对两者有优化，但复杂场景下手动选择仍关键。",
+    "pitfalls": "常见误区：认为 EXISTS 总是比 IN 快。实际性能取决于表大小和数据分布。另一个陷阱是忽略 NULL 值处理，IN 和 EXISTS 对 NULL 的语义不同。"
+  },
+  {
+    "subject": "分库分表类型与策略",
+    "category": "mysql",
+    "difficulty": "困难",
+    "tags": "[\"分库分表\",\"垂直分库\",\"水平分表\",\"分片键\"]",
+    "principles": "分库分表解决单库数据量和并发压力问题。类型包括：垂直分库（按业务模块拆分，如微服务架构）、垂直分表（按字段拆分宽表，减少 I/O）、水平分表（按规则打散数据到多个结构相同的表）、水平分库（跨数据库实例存储）。分片键选择关键，常用策略有取模、范围、一致性哈希等，决定数据均匀性和查询下推能力。",
+    "pitfalls": "常见错误：分片键选择不当导致数据倾斜或查询无法下推。另一个陷阱是忽略跨分片事务和全局主键问题，或过度拆分导致管理复杂。"
+  },
+  {
+    "subject": "水平分表与水平分库",
+    "category": "mysql",
+    "difficulty": "困难",
+    "tags": "[\"sharding\",\"scalability\",\"distributed\"]",
+    "principles": "水平分表将同一张表的数据按规则（如user_id取模）分散到多个结构相同的表中，降低单表容量；水平分库在此基础上跨数据库实例存储，提升存储和吞吐能力。分片键（Sharding Key）选择关键，常用取模、范围、一致性哈希等策略。中间件如ShardingSphere、MyCat通过解析SQL和路由规则自动寻址。",
+    "pitfalls": "分库分表后跨库事务、全局排序、聚合查询复杂，需依赖柔性事务或引入ES做汇总查询。分片键选择不当会导致数据不均匀或查询无法下推。"
+  },
+  {
+    "subject": "VARCHAR(100) 与 VARCHAR(10) 的区别",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"data-types\",\"storage\",\"performance\"]",
+    "principles": "VARCHAR(n)中的n是字符长度限制，不是字节占用。实际存储只使用所需空间，长度前缀根据最大定义长度决定：≤255用1字节，>255用2字节。两者存储开销相同。但定义长度影响内存分配和临时表行为，如排序时按最大长度预估内存，VARCHAR(100)可能多占内存导致磁盘临时表。",
+    "pitfalls": "随意设大值（如VARCHAR(10000)）虽不浪费存储，但会浪费内存、影响性能，并可能触发ORM框架低效路径。建议按实际需要设定，如用户名用VARCHAR(64)。"
+  },
+  {
+    "subject": "count(*)、count(1) 和 count(字段名) 的区别",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"aggregation\",\"performance\",\"null-handling\"]",
+    "principles": "count(*)统计所有行，包括null，优化器选择成本最低的索引树遍历。count(1)效果与count(*)几乎相同，因为1是常量。count(字段名)只统计该字段非空的行，若字段允许null，结果可能少于count(*)。推荐用count(*)统计总行数。",
+    "pitfalls": "误用count(字段名)统计总数会漏掉null行，导致结果不准确。ORM框架默认生成count(1)问题不大，但count(id)需确认id是否为主键且非空。"
+  },
+  {
+    "subject": "Log Buffer 的作用与配置",
+    "category": "mysql",
+    "difficulty": "困难",
+    "tags": "[\"innodb\",\"redo-log\",\"performance\"]",
+    "principles": "Log Buffer是InnoDB的内存区域，用于暂存redo日志，避免每次写操作直接刷盘。事务操作生成的redo日志优先写入Log Buffer，后台线程按策略（如每秒一次、事务提交触发）批量刷到磁盘。这是WAL机制的关键缓存层，通过innodb_log_buffer_size调整大小，默认16MB，高并发场景可调至64MB以上。",
+    "pitfalls": "Log Buffer过小会导致频繁刷盘，降低性能；过大则浪费内存。不经过Log Buffer直接写磁盘会使系统无法承受写压力。"
+  },
+  {
+    "subject": "金额数据应使用 DECIMAL 类型",
+    "category": "mysql",
+    "difficulty": "简单",
+    "tags": "[\"data-types\",\"precision\",\"financial\"]",
+    "principles": "金额数据需精确存储，避免精度丢失。DECIMAL是精确类型，如DECIMAL(10,2)表示最多10位数字，小数点后2位。float/double是近似值，计算会丢失精度。也可用int存“分”，但需代码转换，不直观。推荐直接使用DECIMAL。",
+    "pitfalls": "使用float/double存储金额会导致精度误差，对账出错。用int存分需统一转换逻辑，易出错。"
+  },
+  {
+    "subject": "INNER JOIN、LEFT JOIN 和 RIGHT JOIN 的区别",
+    "category": "mysql",
+    "difficulty": "简单",
+    "tags": "[\"joins\",\"sql-basics\"]",
+    "principles": "INNER JOIN只返回两边匹配的行；LEFT JOIN保留左表全部数据，右表无匹配补NULL；RIGHT JOIN相反。ON先过滤关联数据，WHERE筛选最终结果。LEFT JOIN中若右表字段放WHERE可能过滤掉NULL行，变成内连接。",
+    "pitfalls": "混淆ON和WHERE的执行顺序导致结果错误。RIGHT JOIN不常用，建议统一用LEFT JOIN避免混淆。"
+  },
+  {
+    "subject": "LIMIT 100000000, 10 与 LIMIT 10 的性能差异",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"pagination\",\"performance\",\"optimization\"]",
+    "principles": "LIMIT offset, size会先扫描前offset+size行再丢弃前offset行，深度分页时扫描量大，性能差。LIMIT 10只需扫描前10行。解决方案：游标分页（基于上一页最后一条记录的主键）或先通过索引覆盖查出主键再关联原表。",
+    "pitfalls": "深度分页时使用OFFSET导致全表扫描和大量回表，性能急剧下降。"
+  },
+  {
+    "subject": "DATETIME 与 TIMESTAMP 的区别",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"data-types\",\"timezone\",\"storage\"]",
+    "principles": "DATETIME范围1000-01-01到9999-12-31，占8字节，无时区转换；TIMESTAMP范围1970-01-01到2038-01-19，占4字节，存储UTC时间戳，读写时自动转换时区。两者都支持DEFAULT CURRENT_TIMESTAMP和ON UPDATE CURRENT_TIMESTAMP。",
+    "pitfalls": "TIMESTAMP有2038年问题，跨时区场景需注意。DATETIME不处理时区，可能导致时间不一致。"
+  },
+  {
+    "subject": "TIMESTAMP vs DATETIME 选择策略",
+    "category": "mysql",
+    "difficulty": "简单",
+    "tags": "[\"数据类型\",\"时区\",\"2038年问题\"]",
+    "principles": "TIMESTAMP 存储时间戳（自1970-01-01以来的秒数），受时区影响，适合跨时区场景如日志时间；DATETIME 存储日期时间字符串，不受时区影响，适合预约时间等固定时刻。TIMESTAMP 范围到2038年，DATETIME 范围更大。",
+    "pitfalls": "忽略2038年问题可能导致未来系统崩溃；误用时区转换导致数据不一致。"
+  },
+  {
+    "subject": "MySQL 常用函数及注意事项",
+    "category": "mysql",
+    "difficulty": "简单",
+    "tags": "[\"字符串函数\",\"日期函数\",\"聚合函数\",\"性能优化\"]",
+    "principles": "常用函数包括字符串处理（CONCAT、SUBSTRING）、日期函数（DATE_ADD、DATEDIFF）、数值计算（ROUND、IFNULL）、聚合函数（SUM、COUNT、AVG）和条件判断（CASE WHEN）。避免在 WHERE 条件中对字段使用函数，否则索引失效。复杂逻辑建议放在应用层或使用视图。",
+    "pitfalls": "在 WHERE 子句中对索引字段使用函数导致全表扫描；滥用函数增加数据库 CPU 负载，影响主从复制延迟。"
+  },
+  {
+    "subject": "数据库三大范式",
+    "category": "mysql",
+    "difficulty": "简单",
+    "tags": "[\"范式\",\"数据冗余\",\"设计原则\"]",
+    "principles": "第一范式要求字段原子性，不可再分；第二范式要求非主键字段完全依赖于整个主键（消除部分依赖）；第三范式要求非主键字段直接依赖于主键，无传递依赖。目的是减少冗余、避免更新异常。实际项目中可能反范式化以提升查询性能。",
+    "pitfalls": "过度范式化导致查询性能下降；忽略业务场景盲目遵循范式。"
+  },
+  {
+    "subject": "游标分页 vs LIMIT OFFSET 分页",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"分页\",\"性能优化\",\"游标\"]",
+    "principles": "游标分页基于上一页最后一条记录的唯⼀有序字段（如 ID）作为锚点，使用 WHERE id > last_id 和 LIMIT 获取下一页，避免深分页时的全表扫描。LIMIT OFFSET 在深分页时需扫描大量无关数据，性能差。游标分页适合无限滚动场景，但无法直接跳转到任意页。",
+    "pitfalls": "排序字段有重复值时可能漏数据，需组合字段（如 created_at, id）定位；无法实现随机跳页。"
+  },
+  {
+    "subject": "MySQL 事务隔离级别",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"事务\",\"隔离级别\",\"MVCC\",\"并发控制\"]",
+    "principles": "四种隔离级别：读未提交（脏读）、读已提交（不可重复读）、可重复读（MySQL默认，通过MVCC解决大部分幻读）、串行化（性能最差）。实际业务常用读已提交或可重复读，选择取决于一致性要求和并发负载。",
+    "pitfalls": "混淆不同隔离级别解决的问题；忽略可重复读下的幻读风险（InnoDB通过间隙锁缓解但非完全消除）。"
+  },
+  {
+    "subject": "MySQL 单表最大列数限制",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"表设计\",\"行大小\",\"限制\"]",
+    "principles": "InnoDB 逻辑上支持最多 1017 列（MySQL 5.7+）或 4096 列（8.0.34+），但实际受行大小 65,535 字节限制。列数过多或字段类型过大可能导致 Row size too large 错误。建议拆分为宽表+属性表或使用 JSON 字段。",
+    "pitfalls": "忽略行大小限制导致建表失败；设计过多列影响性能和维护性。"
+  },
+  {
+    "subject": "MySQL 索引创建注意事项",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"索引\",\"性能优化\",\"最左前缀\",\"覆盖索引\"]",
+    "principles": "选择区分度高的列；联合索引遵循最左前缀原则；避免在索引列上使用函数；利用覆盖索引减少回表；字符串字段使用前缀索引；大表加索引使用在线DDL工具；定期检查冗余索引。",
+    "pitfalls": "过度索引拖慢写入性能；忽略最左前缀导致索引失效；未检查未使用索引。"
+  },
+  {
+    "subject": "全量同步 vs 增量同步",
+    "category": "mysql",
+    "difficulty": "困难",
+    "tags": "[\"数据同步\",\"CDC\",\"binlog\",\"性能\"]",
+    "principles": "全量同步一次性拉取所有数据，逻辑简单但资源消耗大，适合小数据量或初始化；增量同步只传输变化数据（基于binlog或CDC），资源消耗低、延迟小，但复杂度高，需处理断点续传和顺序一致性。常见组合：首次全量，后续增量。",
+    "pitfalls": "全量同步在大数据量下导致IO和网络瓶颈；增量同步的断点续传和丢数据风险。"
+  },
+  {
+    "subject": "CDC（Change Data Capture）原理与工具",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"CDC\",\"binlog\",\"Debezium\",\"Canal\",\"Flink CDC\"]",
+    "principles": "CDC（Change Data Capture）通过解析数据库事务日志（如MySQL的binlog、PostgreSQL的WAL）实时捕获数据变更，生成可消费的消息流，无需业务代码侵入，延迟低。常见工具包括：Debezium（基于Kafka Connect，支持多数据库）、Canal（阿里开源，仅MySQL，模拟slave拉取binlog）、Flink CDC（嵌入计算引擎，支持SQL定义管道）。核心配置涉及connector的source属性（数据库地址、binlog位点、加密方式等）。",
+    "pitfalls": "DDL变更可能导致消息格式不兼容；断点续传依赖可靠的offset存储，否则可能丢数据或重复消费。"
+  },
+  {
+    "subject": "批量数据入库的优势与最佳实践",
+    "category": "mysql",
+    "difficulty": "简单",
+    "tags": "[\"batch insert\",\"性能优化\",\"JDBC\",\"MyBatis Plus\"]",
+    "principles": "批量数据入库将多条数据一次性写入，减少网络往返、事务开销和日志刷盘次数，性能提升5~10倍以上。例如，1万条数据分100批（每批100条）执行，实际SQL执行次数从1万次降至100次。MySQL中启用rewriteBatchedStatements=true可将批量插入重写为多值INSERT形式，效率更高。",
+    "pitfalls": "单批次过大（如几千上万条）可能引发大事务问题，导致内存飙升、连接超时或锁表。建议每批控制在200~500条，具体需根据数据库配置和硬件调整。"
+  },
+  {
+    "subject": "MySQL索引类型详解",
+    "category": "mysql",
+    "difficulty": "简单",
+    "tags": "[\"索引\",\"B+树\",\"聚簇索引\",\"二级索引\",\"联合索引\"]",
+    "principles": "MySQL InnoDB索引基于B+树，主要类型包括：1）主键索引（聚簇索引）：行数据与主键一起存储，物理顺序与主键一致，每表一个；2）二级索引（普通索引）：叶子节点存主键值，查询需回表；3）唯一索引：列值唯一，允许一个NULL；4）联合索引：多列组合，遵循最左前缀原则；5）全文索引：用于文本关键词搜索，支持MATCH AGAINST；6）前缀索引：对字符串前N个字符建索引，节省空间。覆盖索引指查询字段均在索引中，无需回表，性能高。",
+    "pitfalls": "联合索引不遵循最左前缀会导致索引失效；前缀索引可能降低区分度，增加扫描行数；全文索引场景有限，通常被Elasticsearch替代。"
+  },
+  {
+    "subject": "多线程并发同步数据到数仓的注意事项",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"多线程\",\"数据同步\",\"数仓\",\"一致性\",\"分片\"]",
+    "principles": "多线程同步数据需平衡一致性与性能：1）拉取数据时避免全表扫描，使用自增ID或时间戳分片（如WHERE id BETWEEN ? AND ?）；2）写入数仓时需幂等，如检查分区是否存在或使用事务型表引擎（如Iceberg）原子替换；3）共享状态（如全局计数器）应避免加锁，改用独立汇报由协调者汇总；4）异常处理需支持重试并防止重复同步，任务状态存于外部存储（如ZooKeeper或任务表）；5）控制并发线程数（10~20个以内）并配合限流，避免源库过载。",
+    "pitfalls": "忽略源库负载可能导致CPU或IOPS飙升；未做幂等处理会导致重复数据；共享状态加锁可能成为性能瓶颈。"
+  },
+  {
+    "subject": "MySQL TEXT类型存储容量与使用场景",
+    "category": "mysql",
+    "difficulty": "简单",
+    "tags": "[\"TEXT\",\"TINYTEXT\",\"MEDIUMTEXT\",\"LONGTEXT\",\"存储\"]",
+    "principles": "MySQL TEXT类型包括：TINYTEXT（最大255字节）、TEXT（最大65,535字节，约64KB）、MEDIUMTEXT（最大16,777,215字节，约16MB）、LONGTEXT（最大4,294,967,295字节，约4GB）。数据存储在溢出页，行内仅存指针，访问时有间接寻址，性能低于VARCHAR。索引受限，普通索引前缀最多767字节（或3072字节，取决于innodb_large_prefix），全文检索可用FULLTEXT索引。",
+    "pitfalls": "频繁用于WHERE或ORDER BY的字段应避免使用TEXT；字符集影响实际可存字符数（如utf8mb4下TEXT最多约16383字符）；大文本查询性能较差。"
+  },
+  {
+    "subject": "AUTO_INCREMENT列达到最大值时的处理",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"AUTO_INCREMENT\",\"溢出\",\"BIGINT\",\"主键\"]",
+    "principles": "当AUTO_INCREMENT列达到数据类型最大值时，下次插入会因自增溢出报错（如Duplicate entry '2147483647' for key 'PRIMARY'）。不同整数类型上限：TINYINT（127/255）、SMALLINT（32767/65535）、MEDIUMINT（8388607/16777215）、INT（2147483647/4294967295）、BIGINT（9.2e18/1.8e19）。预防措施：设计阶段评估增长量，高并发场景直接使用BIGINT UNSIGNED。已接近上限时，可在线修改列类型（如pt-online-schema-change）或分库分表。",
+    "pitfalls": "ALTER TABLE在大表上会锁表，需使用在线工具；未及时处理可能导致业务中断。"
+  },
+  {
+    "subject": "MySQL二级索引与MVCC快照的关系",
+    "category": "mysql",
+    "difficulty": "困难",
+    "tags": "[\"二级索引\",\"MVCC\",\"回表\",\"可见性\"]",
+    "principles": "InnoDB的MVCC依赖聚簇索引中的隐藏字段（trx_id、roll_ptr）和undo log实现。二级索引本身不存储MVCC信息，其叶子节点仅存主键值。查询时先通过二级索引定位主键，再回表到聚簇索引判断可见性。二级索引页虽加载到buffer pool，但不参与undo log构建历史版本。因此，二级索引看到的是索引项最新状态，但最终是否返回记录取决于回表后的MVCC检查。",
+    "pitfalls": "误以为二级索引直接支持MVCC快照读，忽略回表步骤；在已删除未提交的事务中，二级索引仍能定位到索引项，但回表后可能因可见性检查而不返回数据。"
+  },
+  {
+    "subject": "数据库视图的定义与作用",
+    "category": "mysql",
+    "difficulty": "简单",
+    "tags": "[\"视图\",\"虚表\",\"权限隔离\",\"简化查询\"]",
+    "principles": "视图是命名的SQL查询语句，不存储实际数据，只存逻辑。查询时临时执行底层SQL生成结果。主要用途：1）简化复杂查询（如多表关联、聚合）；2）权限隔离（如隐藏敏感字段）；3）保持接口稳定（底层表结构变化时，视图输出不变）。MySQL不支持对视图直接建索引，但可对基表加索引。PostgreSQL支持物化视图，提前存储结果但非实时。",
+    "pitfalls": "频繁查询大范围数据的视图可能性能差，尤其是多层嵌套视图；视图不能独立建索引，优化需依赖基表。"
+  },
+  {
+    "subject": "数据库视图的特性与注意事项",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"视图\",\"虚表\",\"性能\",\"物化视图\"]",
+    "principles": "视图是虚拟表，查询时动态计算，不存储数据。优点包括逻辑封装、安全性、平滑过渡。缺点：嵌套视图可能导致复杂执行计划，影响性能。MySQL 不支持视图独立索引，但可对基表加索引。PostgreSQL 支持物化视图，提前存储结果，提升查询速度但数据非实时。",
+    "pitfalls": "频繁查询大范围数据的视图可能拖慢性能，尤其是多层嵌套。误以为视图能独立建索引。物化视图数据非实时，需注意一致性需求。"
+  },
+  {
+    "subject": "数据库游标的概念与使用",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"游标\",\"存储过程\",\"批量处理\",\"资源管理\"]",
+    "principles": "游标是查询结果的指针，用于逐行处理结果集。本质是上下文句柄，保存查询状态（如当前行位置）。典型场景：存储过程或批量处理，如 MySQL 中使用 DECLARE CURSOR 和 FETCH 逐行读取。注意：大多数 Web 应用无需游标，JDBC/ORM 默认一次性拉取结果集；仅在数据量大时使用服务器端游标。客户端分页不是游标。",
+    "pitfalls": "混淆客户端分页与游标。游标占用数据库服务器资源，使用后必须关闭，否则可能导致性能问题。"
+  },
+  {
+    "subject": "MySQL 中存储大容量内容的弊端",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"BLOB\",\"性能\",\"存储\",\"对象存储\"]",
+    "principles": "MySQL 设计用于结构化数据，存储图片、音频等大文件使用 BLOB 字段会带来问题：1) 存储成本翻倍（文件本身+备份）；2) 性能下降（大文件读写占用内存和带宽，污染 buffer pool）；3) 扩展性差（主从同步延迟，分库分表困难）。推荐做法：文件存对象存储（如 OSS、S3、MinIO），数据库只存 URL 或文件 ID。",
+    "pitfalls": "误以为 BLOB 适合存储大文件，忽略备份和性能影响。未考虑对象存储的元数据管理分离。"
+  },
+  {
+    "subject": "MySQL 相对于 Oracle 的优势",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"MySQL\",\"Oracle\",\"开源\",\"性能\",\"运维\"]",
+    "principles": "MySQL 优势：1) 开源免费，降低授权成本；2) 读多写少、高并发简单查询场景性能好，InnoDB 支持行级锁和 MVCC；3) 架构轻量，运维成本低（单实例 512MB 内存可运行）；4) 生态适配好（LAMP/LEMP、Docker、云 RDS）。Oracle 适合复杂事务、强一致性报表、超大数据量 OLAP 场景。",
+    "pitfalls": "过度依赖 Oracle 的高级特性（如 RAC）导致成本高，而大多数 Web 应用不需要。忽略 MySQL 在复杂事务场景的局限性。"
+  },
+  {
+    "subject": "不推荐建立索引的场景",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"索引\",\"性能\",\"B+树\",\"最左匹配\"]",
+    "principles": "不推荐建索引的情况：1) 数据量小（几百条记录），全表扫描可能更快；2) 频繁更新的字段（如余额、状态），索引维护开销大；3) 区分度低的字段（如性别），索引效果差；4) 大文本字段（如 VARCHAR(1000)），可用前缀索引。注意联合索引最左匹配原则、NULL 值影响、OR 条件可能导致索引失效。",
+    "pitfalls": "误以为索引总是提升性能，忽略维护开销。在低区分度字段建索引导致优化器不走索引。未考虑联合索引顺序。"
+  },
+  {
+    "subject": "MySQL 索引使用 B+ 树而非红黑树的原因",
+    "category": "mysql",
+    "difficulty": "困难",
+    "tags": "[\"B+树\",\"红黑树\",\"磁盘I/O\",\"索引\"]",
+    "principles": "B+ 树适合磁盘 I/O：多路平衡、层级少（3 层可存上千万数据，最多 3 次磁盘 IO）。非叶子节点只存索引，叶子节点存数据且有双向指针，范围查询高效。红黑树层级高（20-30 层），磁盘预读效果差，顺序访问不友好。InnoDB 用 B+ 树支撑海量数据高性能查找。",
+    "pitfalls": "混淆 B+ 树和 B 树的区别。忽略磁盘 I/O 特性，误以为内存结构（如红黑树）适合数据库。"
+  },
+  {
+    "subject": "Write-Ahead Logging (WAL) 技术及其在 MySQL 中的应用",
+    "category": "mysql",
+    "difficulty": "困难",
+    "tags": "[\"WAL\",\"redo log\",\"持久性\",\"崩溃恢复\"]",
+    "principles": "WAL 核心：修改数据前先确保日志落盘，保证持久性。优点：1) 性能提升（顺序写日志比随机写数据页快）；2) 持久性保证（日志 fsync 后事务可返回成功）；3) 简化恢复（崩溃后重放日志）。MySQL InnoDB 的 redo log 是典型 WAL 实现：先写 redo log buffer，提交时刷盘，再异步刷脏页。",
+    "pitfalls": "误以为 WAL 只用于 MySQL，忽略其他数据库也使用。混淆 redo log 和 binlog。未理解日志落盘是事务提交的关键步骤。"
+  },
+  {
+    "subject": "MySQL 生产环境的事务隔离级别",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"事务隔离级别\",\"可重复读\",\"MVCC\",\"间隙锁\"]",
+    "principles": "MySQL 默认隔离级别是可重复读（Repeatable Read），生产环境常用。特点：事务内两次读同一行结果一致，避免幻读和不可重复读。InnoDB 通过 MVCC 和间隙锁实现。不选串行化（性能低）和读已提交（可能出现不可重复读）。电商扣库存场景可重复读保证一致性。注意 SELECT ... FOR UPDATE 会走当前读，可能看到新数据。",
+    "pitfalls": "误以为可重复读完全避免幻读，实际上当前读可能看到新数据。忽略间隙锁对并发的影响。"
+  },
+  {
+    "subject": "SQL 执行顺序与别名使用限制",
+    "category": "mysql",
+    "difficulty": "简单",
+    "tags": "[\"SQL\",\"执行顺序\",\"别名\"]",
+    "principles": "SQL 语句的执行顺序为：FROM → WHERE → GROUP BY → HAVING → SELECT → ORDER BY。ORDER BY 可以使用别名，因为它在 SELECT 之后执行；而 WHERE 不能使用别名，因为它在 SELECT 之前执行。",
+    "pitfalls": "面试者可能混淆执行顺序，误以为 WHERE 可以使用别名，或者不清楚 ORDER BY 别名的原理。"
+  },
+  {
+    "subject": "InnoDB 与 MyISAM 存储引擎的区别",
+    "category": "mysql",
+    "difficulty": "简单",
+    "tags": "[\"InnoDB\",\"MyISAM\",\"存储引擎\",\"事务\",\"锁\"]",
+    "principles": "InnoDB 支持事务（ACID）、行级锁、外键，具有崩溃恢复能力（redo/undo log）；MyISAM 不支持事务，仅支持表级锁，无外键，崩溃后需手动修复。MyISAM 的 COUNT(*) 无 WHERE 时更快，但整体适用场景窄。新项目通常使用 InnoDB，MyISAM 仅用于纯日志或只读报表等极少更新场景。",
+    "pitfalls": "面试者可能忽略崩溃恢复能力或锁粒度对并发的影响，或误以为 MyISAM 在所有查询场景下都更快。"
+  },
+  {
+    "subject": "redo log 记录的内容与 WAL 机制",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"redo log\",\"WAL\",\"崩溃恢复\",\"InnoDB\"]",
+    "principles": "redo log 记录的是物理日志，即数据页的修改细节（如表空间、页号、偏移量、修改前后的字节），而非 SQL 语句本身。它是 WAL（Write-Ahead Logging）的核心：事务提交时先写 redo log，再修改内存数据页，后续通过 checkpoint 异步刷盘。这保证了事务的持久性和崩溃恢复能力。",
+    "pitfalls": "常见误区是认为 redo log 记录 SQL 语句，或混淆 redo log 与 binlog 的作用。"
+  },
+  {
+    "subject": "MySQL 建表设计注意事项",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"建表\",\"主键设计\",\"字段类型\",\"索引\",\"字符集\"]",
+    "principles": "主键推荐用自增 ID，避免 UUID 等长字符串；字段类型尽量小（如状态用 tinyint，时间用 timestamp）；避免使用 TEXT 大字段；索引数量适度（单表不超过 6 个），联合索引遵循最左前缀原则；避免 SELECT *；字符集统一用 utf8mb4；存储引擎默认 InnoDB。大表 ALTER TABLE 需谨慎，可使用 pt-online-schema-change。",
+    "pitfalls": "面试者可能忽略主键对辅助索引大小的影响，或过度索引导致写入性能下降。"
+  },
+  {
+    "subject": "不推荐多表 JOIN 的原因与替代方案",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"JOIN\",\"性能优化\",\"查询优化\",\"应用层拼装\"]",
+    "principles": "多表 JOIN 可能导致优化器选择不佳的执行计划（如笛卡尔积）、消耗大量内存（中间结果集大）、难以横向扩展。推荐拆分为多个单表查询，在应用层拼装数据，每个查询可走索引，整体更可控。但两三个表且数据量不大时，合理使用 JOIN 仍高效。",
+    "pitfalls": "面试者可能认为 JOIN 总是低效，忽略小数据量或索引良好时的优势，或不清楚应用层拼装的实现细节。"
+  },
+  {
+    "subject": "MySQL 查询优化器如何选择执行计划",
+    "category": "mysql",
+    "difficulty": "困难",
+    "tags": "[\"查询优化器\",\"执行计划\",\"成本模型\",\"EXPLAIN\"]",
+    "principles": "优化器基于成本模型（扫描行数、随机 IO、排序/临时表开销等）选择执行计划。它考虑 WHERE 条件的索引可用性、索引区分度、索引合并、关联顺序重排等。通过 EXPLAIN 可查看最终计划，重点关注 type、key、rows、Extra 字段。统计信息不准可能导致误判，需定期 ANALYZE TABLE。",
+    "pitfalls": "面试者可能认为优化器总是选择最优计划，忽略统计信息过时或索引选择不当的影响。"
+  },
+  {
+    "subject": "数据库不停服迁移的实现方法",
+    "category": "mysql",
+    "difficulty": "困难",
+    "tags": "[\"迁移\",\"双写\",\"数据一致性\",\"Canal\",\"DataX\"]",
+    "principles": "核心步骤：1) 结构兼容改造；2) 开启双写（同时写老库和新库）；3) 迁移历史数据（如 DataX 或 Canal+Kafka+Flink）；4) 数据比对（如 DataDiff）；5) 切换读流量到新库；6) 下线双写，只写新库。每步需监控和回滚方案，如用 Canal 监听 binlog 做反向补偿。",
+    "pitfalls": "常见陷阱包括双写阶段数据不一致、迁移工具性能瓶颈、切换后未充分验证导致回滚困难。"
+  },
+  {
+    "subject": "MySQL 数据库性能优化方法",
+    "category": "mysql",
+    "difficulty": "困难",
+    "tags": "[\"性能优化\",\"索引失效\",\"覆盖索引\",\"分页优化\",\"缓存\"]",
+    "principles": "关键优化点：避免索引失效（如函数操作、违反最左前缀）；利用覆盖索引减少回表；用 EXPLAIN 分析慢查询；大表分页用游标分页替代 LIMIT offset；读多写少场景加 Redis 缓存（注意穿透/雪崩）；冷热数据分离；合理配置连接池（如 HikariCP 最大连接数 20-50）。",
+    "pitfalls": "面试者可能只关注索引而忽略其他方面，或误以为缓存一定能解决问题而不考虑一致性问题。"
+  },
+  {
+    "subject": "物理外键与逻辑外键的优缺点",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"foreign key\",\"data integrity\",\"distributed architecture\"]",
+    "principles": "物理外键通过DDL定义（如FOREIGN KEY），数据库自动校验引用完整性，保证数据一致性，支持级联操作（如ON DELETE CASCADE）。逻辑外键无DDL约束，靠应用代码维护关联关系，如订单表的user_id字段指向用户表主键但无外键约束。物理外键优点：自动阻止非法数据写入，级联操作方便。缺点：高并发写时锁竞争严重，分库分表后无法跨节点生效。逻辑外键优点：灵活，适合分布式架构，应用层可控制校验时机和重试策略。缺点：代码出错或约定不明易产生脏数据。实际项目中，单体数据库建议用物理外键，微服务+分库分表场景用逻辑外键，配合定时对账任务兜底。",
+    "pitfalls": "面试者可能忽略物理外键在分布式环境下的局限性，或过度依赖逻辑外键导致数据一致性问题。常见陷阱：认为物理外键总是更好，未考虑性能开销；或认为逻辑外键完全可靠，忽视代码维护成本。"
+  },
+  {
+    "subject": "MySQL事务的二阶段提交",
+    "category": "mysql",
+    "difficulty": "困难",
+    "tags": "[\"transaction\",\"redo log\",\"binlog\",\"crash recovery\"]",
+    "principles": "MySQL的二阶段提交（2PC）是InnoDB在崩溃恢复时保证redo log和binlog一致性的机制。redo log记录物理日志，保证原子性和持久性；binlog是逻辑日志，用于主从复制和PITR。过程：1）prepare阶段：redo log写入磁盘，事务状态标记为PREPARED，binlog未落盘。2）commit阶段：binlog写入并刷盘，InnoDB写commit标记到redo log，事务才算真正提交。崩溃恢复时，扫描undo log中的PREPARED事务，用XID检查binlog是否存在：若存在则提交，否则回滚。该机制确保主从数据同步可靠，是MGR、XtraDB Cluster等高可用方案的基础。仅在开启binlog且使用支持事务的引擎时生效。",
+    "pitfalls": "常见误解：认为二阶段提交仅用于分布式事务，忽略其在单机崩溃恢复中的作用。陷阱：未理解prepare阶段后崩溃的处理逻辑，或混淆redo log和binlog的角色。"
+  },
+  {
+    "subject": "MySQL乐观锁与悲观锁",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"locking\",\"concurrency\",\"optimistic lock\",\"pessimistic lock\"]",
+    "principles": "乐观锁和悲观锁是应用层设计思想，通过数据库能力实现。悲观锁假设冲突大概率发生，访问数据时直接加锁，如SELECT ... FOR UPDATE实现排他锁，保证强一致性但降低吞吐量，适合高冲突场景如扣减库存。乐观锁假设冲突少，通过版本号或时间戳控制，如UPDATE goods SET stock = stock - 1, version = version + 1 WHERE id = 1001 AND version = 1，影响行数为0则重试，无长时间锁持有，适合读多写少场景如秒杀系统配合Redis预减库存。对比：悲观锁简单直接但易串行化；乐观锁并发性能好但有重试成本。选型取决于业务，如金融转账偏向悲观锁，内容点赞适合乐观锁。",
+    "pitfalls": "面试者可能混淆乐观锁与数据库的乐观并发控制（如MVCC），或误认为悲观锁总是导致死锁。常见陷阱：在低冲突场景滥用悲观锁导致性能下降，或在写冲突高的场景使用乐观锁导致大量重试。"
+  },
+  {
+    "subject": "MySQL存储引擎及其区别",
+    "category": "mysql",
+    "difficulty": "简单",
+    "tags": "[\"InnoDB\",\"MyISAM\",\"storage engine\"]",
+    "principles": "MySQL常用存储引擎：InnoDB（默认，支持事务、行级锁、外键、MVCC，适合高并发和数据一致性场景如电商订单）；MyISAM（查询快，支持count(*)全表扫描，但不支持事务和行锁，写时锁整表，已淘汰，仅用于日志类或读多写少场景）；Memory（数据在内存，断电丢失，适合临时缓存）；Archive（高压缩比，查询能力弱，用于归档数据）。InnoDB数据按聚簇索引组织，主键索引带行数据，二级索引指向主键；MyISAM索引指向数据文件地址。选型关键：需要事务和并发写必须用InnoDB；纯读且统计频繁可考虑MyISAM，但现代方案多用缓存或数仓。",
+    "pitfalls": "常见错误：认为MyISAM适合所有读场景，忽略其故障恢复能力差；或在新项目中使用MyISAM。陷阱：混淆InnoDB的聚簇索引与MyISAM的非聚簇索引结构。"
+  },
+  {
+    "subject": "InnoDB聚簇索引与非聚簇索引的区别",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"clustered index\",\"nonclustered index\",\"B+ tree\"]",
+    "principles": "聚簇索引叶子节点存储完整行数据，非聚簇索引存储索引列值和主键ID。InnoDB表必须有聚簇索引，通常为主键；若无主键，选唯一非空索引；再没有则隐式生成。查询时，走聚簇索引一次查找即可；走非聚簇索引需先查主键ID，再回表查数据，增加一次IO。例如：SELECT * FROM users WHERE id = 1走聚簇索引；SELECT * FROM users WHERE name = 'Tom'走非聚簇索引后回表。非聚簇索引B+树内部节点存name和指针，叶子存name+id；聚簇索引叶子存整行。更新主键成本高，因数据按主键物理排序，改主键导致页分裂。建议主键用自增int或bigint，避免UUID等长主键。",
+    "pitfalls": "常见误解：认为非聚簇索引一定比聚簇索引慢，忽略覆盖索引可避免回表。陷阱：在频繁更新的列上建主键，或使用UUID导致B+树层数增加。"
+  },
+  {
+    "subject": "MySQL中的回表操作",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"回表\",\"二级索引\",\"覆盖索引\"]",
+    "principles": "回表指查询不能完全通过索引树获取数据，需回到主键索引（聚簇索引）查找剩余字段的过程。InnoDB二级索引叶子节点存主键值，而非行数据地址，因此需要非索引列时，需先查二级索引得到主键ID，再回主键索引查完整行。例如：联合索引(name)查询name和email，email不在索引中，则先查name索引得主键ID，再回表查email。回表代价高，一次查询可能变成两次B+树遍历，结果集大时随机IO增加。避免回表的关键是使用覆盖索引，即查询字段全在索引中，如SELECT id, name FROM users WHERE name = 'Tom'。使用联合索引或调整索引结构可减少回表。",
+    "pitfalls": "面试者可能忽略回表在大量结果集下的性能影响，或误认为所有二级索引查询都需回表。常见陷阱：未区分覆盖索引和回表的关系，认为回表总是不可避免。"
+  },
+  {
+    "subject": "MySQL覆盖索引",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"covering index\",\"回表\",\"索引优化\"]",
+    "principles": "覆盖索引指查询字段都包含在某个索引中，MySQL直接通过索引返回数据，无需回表。例如：订单表orders有联合索引(status, create_time, user_id)，查询SELECT user_id FROM orders WHERE status = 1 AND create_time > '2023-01-01'，只需走索引树取出user_id，无需回主键索引。关键点：1）若查询字段不在索引中（如SELECT amount），则需回表；2）覆盖索引能减少大量随机IO，提升大表性能；3）但避免为所有查询建宽索引，否则写入代价高，B+树层数增加。实际场景中，如用Elasticsearch同步MySQL数据，可为高频查询建覆盖索引，使同步查询轻量化。",
+    "pitfalls": "常见错误：认为覆盖索引总是有益，忽略宽索引对写入性能的影响。陷阱：在覆盖索引中包含过多字段，导致索引维护成本高。"
+  },
+  {
+    "subject": "MySQL索引下推（ICP）",
+    "category": "mysql",
+    "difficulty": "困难",
+    "tags": "[\"ICP\",\"索引下推\",\"优化\"]",
+    "principles": "索引下推（ICP）是MySQL 5.6引入的优化，减少二级索引查询时的回表次数。无ICP时，存储引擎找到符合索引条件的记录即回表，由Server层判断其他WHERE条件，导致无效回表。有ICP时，存储引擎层将索引字段的过滤条件下推，在索引遍历中提前过滤，只回表符合条件的记录。例如：表users有联合索引(name, age)，查询SELECT * FROM users WHERE name LIKE '张%' AND age > 30，name为范围查询，传统方式只能用到name索引，age条件需回表判断；启用ICP后，age > 30在存储引擎层过滤，减少回表量。ICP不适用于主键索引，也不支持覆盖索引（因无需回表）。InnoDB和MyISAM支持，执行计划Extra字段显示Using index condition。",
+    "pitfalls": "常见误解：认为ICP适用于所有查询，忽略其仅对二级索引有效。陷阱：在覆盖索引场景下误用ICP，或未通过执行计划确认是否生效。"
+  },
+  {
+    "subject": "索引失效的常见原因",
+    "category": "mysql",
+    "difficulty": "简单",
+    "tags": "[\"索引\",\"失效\",\"执行计划\"]",
+    "principles": "索引失效的常见原因包括：在索引字段上使用函数操作（如 WHERE YEAR(create_time) = 2023）、隐式类型转换（如 varchar 字段用数字查询未加引号）、联合索引不遵守最左前缀原则（如索引 (a,b,c) 查询 b=1 and c=2）、LIKE 以 % 开头（如 LIKE '%abc'）。这些操作会导致 B+ 树无法高效查找，MySQL 可能选择全表扫描。",
+    "pitfalls": "面试者常忽略隐式类型转换和联合索引顺序的影响，误以为只要建了索引就一定能用上。"
+  },
+  {
+    "subject": "使用 EXPLAIN 分析索引效果",
+    "category": "mysql",
+    "difficulty": "简单",
+    "tags": "[\"EXPLAIN\",\"执行计划\",\"索引优化\"]",
+    "principles": "使用 EXPLAIN 分析 SQL 执行计划，重点关注 type、key 和 Extra 字段。type 至少达到 range 级别才算有效使用索引，最好达到 ref 或 const。key 显示实际使用的索引，若为 NULL 则未使用索引。Extra 中出现 Using index 表示覆盖索引命中，性能好；出现 Using filesort 或 Using temporary 则需优化。线上排查可用 slow query log 配合 pt-query-digest 分析慢查询。",
+    "pitfalls": "仅关注 key 字段而忽略 type 和 Extra，或误认为 type 为 ALL 时一定有问题（数据量小可能全表扫描更快）。"
+  },
+  {
+    "subject": "索引数量并非越多越好",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"索引\",\"性能\",\"写放大\"]",
+    "principles": "索引是双刃剑：查询可能变快，但写操作（INSERT/UPDATE/DELETE）需维护 B+ 树，增加磁盘 I/O 和内存操作。每个索引占用存储空间，过多索引可能导致优化器选错执行计划。建议单表索引控制在 5 个以内，优先使用覆盖索引和组合索引（如 (city, age) 替代两个单列索引）。需权衡读写比例：读多写少可适当多建，写频繁则需精打细算。",
+    "pitfalls": "面试者常忽略写放大问题，认为索引越多越好；或误以为组合索引与单列索引效果相同。"
+  },
+  {
+    "subject": "MySQL 选择 B+ 树作为索引结构的原因",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"B+树\",\"索引结构\",\"磁盘I/O\"]",
+    "principles": "B+ 树在磁盘 I/O 效率、数据有序性和范围查询能力间取得平衡。非叶子节点只存索引，每页可容纳更多键值，树高更低（3 层可支撑百万行数据，查询仅需 2~3 次磁盘 IO）。叶子节点用双向链表连接，范围查询高效（如 WHERE id BETWEEN 100 AND 200）。结构稳定，插入删除通过分裂合并维持平衡。对比：哈希索引不支持范围查询，二叉搜索树深度大，B 树每个节点存数据导致树更高。",
+    "pitfalls": "面试者常混淆 B 树和 B+ 树，或忽略叶子节点链表对范围查询的优化。"
+  },
+  {
+    "subject": "长事务可能引发的问题",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"长事务\",\"锁竞争\",\"undo log\",\"主从延迟\"]",
+    "principles": "长事务在 MySQL 中隐患多：1）锁竞争加剧，持有锁时间久，其他事务等待变长；2）回滚段压力大，undo log 无法清理，可能导致 ibdata1 文件膨胀；3）主从延迟，从库重放慢；4）临时文件和内存泄漏风险，可能触发 OOM；5）逻辑备份失败，mysqldump 可能卡住。建议事务控制在几秒内完成，超过 30 秒为危险信号，可通过 information_schema.innodb_trx 表定位异常事务。",
+    "pitfalls": "面试者常只关注锁问题，忽略 undo log 和主从延迟等连锁反应。"
+  },
+  {
+    "subject": "脏读、不可重复读和幻读的区别",
+    "category": "mysql",
+    "difficulty": "简单",
+    "tags": "[\"事务隔离\",\"脏读\",\"不可重复读\",\"幻读\"]",
+    "principles": "脏读：读到未提交数据（如事务 A 更新未提交，事务 B 读到，A 回滚则 B 数据无效）。不可重复读：同一事务内两次读取同一行结果不同（因其他事务修改并提交）。幻读：同一事务内两次查询结果集数量不同（因其他事务插入新数据）。通过隔离级别控制：读已提交解决脏读，可重复读解决前两个，串行化彻底避免幻读。MySQL InnoDB 在可重复读级别下通过间隙锁和 MVCC 防止大部分幻读。",
+    "pitfalls": "面试者常混淆不可重复读和幻读，误以为幻读是行数据变化而非数量变化。"
+  },
+  {
+    "subject": "MySQL 锁类型详解",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"行级锁\",\"间隙锁\",\"Next-Key Lock\",\"意向锁\"]",
+    "principles": "InnoDB 锁类型：1）行级锁：共享锁（S锁）和排他锁（X锁），减少锁冲突；2）间隙锁（Gap Lock）：锁索引间隙，防止幻读；3）Next-Key Lock：行锁+间隙锁，RR 级别默认，防幻读关键；4）表级锁：意向共享锁（IS）和意向排他锁（IX），声明式锁，快速判断表锁定；5）自增锁：特殊表级锁，保证 AUTO_INCREMENT 不冲突。",
+    "pitfalls": "面试者常忽略间隙锁和 Next-Key Lock 的区别，或误认为行锁只锁单行。"
+  },
+  {
+    "subject": "MySQL 死锁的检测与解决",
+    "category": "mysql",
+    "difficulty": "困难",
+    "tags": "[\"死锁\",\"锁等待\",\"重试\",\"事务设计\"]",
+    "principles": "MySQL 自动检测死锁并回滚其中一个事务，被回滚事务收到 Deadlock found when trying to get lock 错误。应用层需捕获异常并重试（带退避策略）。排查死锁可查 information_schema.innodb_lock_waits 和 innodb_trx 表，结合 SHOW ENGINE INNODB STATUS 输出。避免死锁的关键：访问多张表或同表多行时保持顺序一致（如按主键从小到大更新），缩短事务长度，避免在事务中执行网络请求或文件读写。",
+    "pitfalls": "面试者常忽略应用层重试机制，或误以为死锁只能靠数据库解决。"
+  },
+  {
+    "subject": "数据库分库分表拆分策略",
+    "category": "mysql",
+    "difficulty": "困难",
+    "tags": "[\"分库分表\",\"分片键\",\"ShardingSphere\",\"数据迁移\"]",
+    "principles": "分库分表前需明确拆分目标（读多写少或写入瓶颈），根据业务场景选择分片键（如订单按user_id、日志按时间）。技术选型贴合现有架构，Java栈常用ShardingSphere（JDBC内嵌或Proxy多语言）。上线前需离线迁移历史数据、改造服务层支持双写（如Canal监听binlog做增量补偿），并灰度上线+流量回放验证。",
+    "pitfalls": "分片键选择不当会导致数据倾斜或查询路由失效；忽略跨库事务、全局唯一ID、跨库JOIN等连锁问题；未做灰度验证直接全量切换易引发故障。"
+  },
+  {
+    "subject": "DELETE、DROP、TRUNCATE的区别",
+    "category": "mysql",
+    "difficulty": "简单",
+    "tags": "[\"DDL\",\"DML\",\"事务\",\"回滚\",\"表空间\"]",
+    "principles": "DELETE是DML，逐行删除，记录undo/redo log，支持事务和条件回滚，不释放表空间，自增ID不重置，可能锁行。TRUNCATE是DDL，直接drop表再重建，速度快，不能加条件，自增ID归1，回收空间，不可回滚。DROP是DDL，删除表结构和数据（索引、约束等），恢复仅靠备份。",
+    "pitfalls": "误用TRUNCATE或DROP导致数据不可恢复；DELETE大量数据时性能差且锁竞争严重；忽视TRUNCATE的DDL特性（隐式提交）。"
+  },
+  {
+    "subject": "MySQL慢SQL监控与优化",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"慢查询日志\",\"EXPLAIN\",\"索引优化\",\"Performance Schema\"]",
+    "principles": "开启慢查询日志（slow_query_log），设置合理阈值（生产通常1秒或500ms）。用EXPLAIN分析执行计划，关注type（避免ALL）、key（索引使用）、rows（扫描行数）、Extra（Using filesort/temporary需优化）。检查索引（SHOW INDEX）、遵循最左匹配、减少SELECT *。复杂场景用Performance Schema或sys.schema（如sys.statements_with_full_table_scans）。代码层避免N+1查询，线上改表用pt-online-schema-change。",
+    "pitfalls": "慢查询日志未开启或阈值过高导致遗漏；EXPLAIN中rows是估算值，不精确；忽略索引失效场景（如函数操作、隐式类型转换）。"
+  },
+  {
+    "subject": "MySQL深度分页问题及解决方案",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"分页\",\"LIMIT\",\"游标\",\"索引\",\"缓存\"]",
+    "principles": "深度分页（如LIMIT 1000000,20）因大offset导致全范围扫描，性能差。核心解决思路是避免大offset，改用基于游标的分页：利用索引字段（如主键或有序ID）加WHERE条件过滤（如WHERE id > 1000000 LIMIT 20），走索引，效率O(log n)。若需跳转第N页，可预计算边界值或使用延迟关联，但成本高，推荐前端改为“加载更多”。也可结合缓存（如Redis ZSET）预加载热点数据。",
+    "pitfalls": "直接使用LIMIT offset, size在offset大时性能急剧下降；游标分页不支持随机跳页；忽略业务场景盲目使用缓存导致数据不一致。"
+  },
+  {
+    "subject": "SQL语句在MySQL中的执行过程",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"连接器\",\"解析器\",\"优化器\",\"执行器\",\"InnoDB\"]",
+    "principles": "客户端请求经连接器验证身份和权限。解析阶段：查询缓存（8.0移除）→词法/语法分析生成解析树→预处理器校验字段表名和权限。优化器基于成本模型选择执行路径（如JOIN顺序、索引选择），生成执行计划（EXPLAIN查看）。执行器调用存储引擎接口（如InnoDB），通过索引查找数据，更新操作写redo/undo log，涉及锁机制（行锁、间隙锁）和两阶段提交（binlog开启时保证crash-safe）。",
+    "pitfalls": "长连接内存累积导致OOM；查询缓存命中率低且8.0已移除；优化器可能选错索引（需force index或调整统计信息）。"
+  },
+  {
+    "subject": "MySQL Change Buffer的作用与原理",
+    "category": "mysql",
+    "difficulty": "困难",
+    "tags": "[\"Change Buffer\",\"二级索引\",\"写优化\",\"IO\"]",
+    "principles": "Change Buffer优化非唯一二级索引的写入性能。当索引页不在buffer pool时，将修改记录在Change Buffer（磁盘顺序写），待该页被读取时再merge合并，减少随机IO。仅对非唯一索引生效（唯一索引需立即校验唯一性）。merge由页访问或后台线程触发。适合写多读少场景，批量导入时性能提升显著。",
+    "pitfalls": "唯一索引无法使用Change Buffer；频繁查询刚写入的索引会频繁触发merge，抵消优势；Change Buffer本身占用buffer pool空间。"
+  },
+  {
+    "subject": "MySQL Buffer Pool的作用与数据读取机制",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"Buffer Pool\",\"内存\",\"脏页\",\"IO\"]",
+    "principles": "Buffer Pool是InnoDB的内存区域，缓存表数据和索引。查询时先检查Buffer Pool，命中则直接返回（内存级速度），未命中则从磁盘读取并加载到Buffer Pool。写操作先修改Buffer Pool中的页（变为脏页），由后台线程异步刷盘，将随机IO转为顺序IO。生产环境通常设置Buffer Pool为物理内存的70%-80%。",
+    "pitfalls": "Buffer Pool过小导致频繁磁盘IO；脏页刷盘策略不当影响性能；忽略Buffer Pool命中率监控（如show engine innodb status）。"
+  },
+  {
+    "subject": "分库分表引发的常见问题",
+    "category": "mysql",
+    "difficulty": "困难",
+    "tags": "[\"分布式事务\",\"全局ID\",\"跨库查询\",\"运维\"]",
+    "principles": "分库分表后问题：1）跨库事务需分布式方案（如Seata），性能损耗大；2）全局唯一ID不能用自增，需雪花算法或Leaf；3）跨库JOIN失效，需应用层拼接或宽表冗余；4）分页/聚合查询变慢，需中间件归并；5）运维复杂度飙升（备份、扩容、DDL需跨库协调）。核心原则：单机能扛住就不分，分后需接受复杂性。",
+    "pitfalls": "未评估业务增长就盲目分库分表；忽略分布式ID生成器的性能瓶颈；跨库查询未做降级导致应用层超时。"
+  },
+  {
+    "subject": "EXPLAIN 执行计划中的 rows 和 Extra 字段",
+    "category": "mysql",
+    "difficulty": "简单",
+    "tags": "[\"EXPLAIN\",\"rows\",\"Extra\",\"Using filesort\",\"Using temporary\"]",
+    "principles": "rows 列是预估扫描行数，值越大性能越差。Extra 列出现 Using filesort 表示无法利用索引排序，Using temporary 表示使用了临时表，两者都是性能瓶颈信号。理想状态是 Extra 显示 Using index，即覆盖索引。",
+    "pitfalls": "rows 是预估值，不精确；possible_keys 是可能用上的索引，不一定实际使用。"
+  },
+  {
+    "subject": "MySQL 主从同步延迟的原因与解决方案",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"主从同步\",\"延迟\",\"并行复制\",\"大事务\",\"读写分离\"]",
+    "principles": "主从同步延迟本质是备库追不上主库写入速度，常见于大事务、网络抖动或备库负载过高。解决方案包括：拆分大事务为小批量操作；使用并行复制（MySQL 5.7 按库并行，8.0 逻辑时钟并行）；读写分离场景下关键请求走主库；监控延迟超过阈值告警。",
+    "pitfalls": "Seconds_Behind_Master 只是参考值，需结合 relay_log 回放进度判断；大事务如单条 DELETE 删除百万行会导致严重延迟。"
+  },
+  {
+    "subject": "MySQL 主从同步机制与实现",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"主从复制\",\"binlog\",\"relay log\",\"半同步复制\",\"row 模式\"]",
+    "principles": "主从同步本质是数据变更事件的传递与回放。主库开启 binlog，从库 I/O 线程拉取 binlog 事件存入 relay log，SQL 线程重放事件。整个过程异步，半同步复制可减少数据丢失风险。binlog 推荐 row 模式，精确记录每行变化。",
+    "pitfalls": "异步复制下主库崩溃可能丢数据；statement 模式可能因函数或触发器导致不一致。"
+  },
+  {
+    "subject": "MySQL 读写分离的实现方式",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"读写分离\",\"ShardingSphere\",\"MyCat\",\"主从复制\",\"事务路由\"]",
+    "principles": "读写分离基于主从复制，通过中间件（如 ShardingSphere、MyCat）解析 SQL 自动路由：SELECT 到从库，INSERT/UPDATE/DELETE 到主库。事务中的读必须走主库，避免读到延迟数据。从库可挂多个分摊读压力，但写扩展仍需分库分表。",
+    "pitfalls": "事务内读操作若路由到从库可能读到旧值；读写分离不解决写瓶颈。"
+  },
+  {
+    "subject": "MySQL 避免单点故障的高可用方案",
+    "category": "mysql",
+    "difficulty": "困难",
+    "tags": "[\"高可用\",\"MHA\",\"Group Replication\",\"InnoDB Cluster\",\"Keepalived\"]",
+    "principles": "核心思路是数据冗余 + 自动切换。基础方案是主从复制配合人工切换；进阶用 MHA 自动选主并切换；更高级用 MySQL Group Replication 或 InnoDB Cluster，基于 Paxos 协议保证多数派确认，配合 Router 实现应用无感。外部依赖如 Keepalived 虚拟 IP 或中间件路由也可消除单点。",
+    "pitfalls": "主从复制本身不解决自动 failover；MHA 切换有空窗期；Group Replication 对网络要求高。"
+  },
+  {
+    "subject": "MySQL SQL 调优步骤与索引设计",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"SQL 调优\",\"慢查询日志\",\"EXPLAIN\",\"索引设计\",\"最左前缀\"]",
+    "principles": "调优第一步开启慢查询日志，找出慢 SQL。用 EXPLAIN 分析执行计划，关注 type（避免 ALL/index）、Extra（避免 Using filesort/temporary）。索引设计遵循最左前缀原则，联合索引按查询条件顺序建。大字段用前缀索引或单独存储。数据量上亿考虑分库分表，热点数据用 Redis 缓存。",
+    "pitfalls": "索引过多会拖慢写入；text 类型不适合直接建索引；分库分表后跨库 join 和事务复杂。"
+  },
+  {
+    "subject": "MySQL 事务实现机制（redo log、undo log、锁）",
+    "category": "mysql",
+    "difficulty": "困难",
+    "tags": "[\"事务\",\"redo log\",\"undo log\",\"锁\",\"ACID\",\"MVCC\"]",
+    "principles": "InnoDB 通过 redo log 保证持久性（先写日志后改数据页，crash recovery 重放），undo log 支持原子性和一致性（回滚和 MVCC 版本链），锁机制保障隔离性（行级锁、next-key lock 防幻读）。三者协同实现 ACID。",
+    "pitfalls": "redo log 是物理日志，undo log 是逻辑日志；MVCC 依赖 undo log 构建历史版本。"
+  },
+  {
+    "subject": "MySQL B+ 树查询全过程",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"B+ 树\",\"索引\",\"聚簇索引\",\"回表\",\"范围查询\"]",
+    "principles": "InnoDB 用 B+ 树组织主键索引，非叶子节点存索引键和指针，叶子节点存行数据且用双向链表连接。查询从根节点二分查找逐层下探（每层一次 IO，通常 3~4 层），到叶子节点后二分加遍历找到记录。普通索引可能需回表查主键索引。范围查询利用叶子链表高效扫描。",
+    "pitfalls": "B+ 树所有查询必须到叶子节点，不像 B 树可能中途命中；随机写入易产生页碎片。"
+  },
+  {
+    "subject": "MySQL MVCC 多版本并发控制",
+    "category": "mysql",
+    "difficulty": "困难",
+    "tags": "[\"MVCC\",\"Read View\",\"undo log\",\"快照读\",\"当前读\",\"幻读\"]",
+    "principles": "MVCC 通过隐藏字段 DB_TRX_ID、DB_ROLL_PTR 和 undo log 形成版本链。事务启动时生成 Read View（活跃事务 ID 快照），决定可见版本。可重复读（RR）下 Read View 贯穿整个事务，保证多次读一致。MVCC 仅作用于快照读（普通 SELECT），当前读（SELECT ... FOR UPDATE）需加锁。",
+    "pitfalls": "MVCC 不防止幻读，RR 下防幻读靠 next-key lock；更新操作走当前读。"
+  },
+  {
+    "subject": "MVCC definition and role in Repeatable Read",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"MVCC\",\"Repeatable Read\",\"Read View\"]",
+    "principles": "MVCC (Multi-Version Concurrency Control) ensures that under Repeatable Read isolation level, a transaction sees a consistent snapshot of data as of its start time. Changes made by other transactions after that are invisible, guaranteeing repeatable reads.",
+    "pitfalls": "Candidates may confuse MVCC with locking mechanisms or think it applies to all reads. MVCC only applies to snapshot reads (plain SELECT), not to current reads (SELECT ... FOR UPDATE, LOCK IN SHARE MODE) or updates."
+  },
+  {
+    "subject": "MVCC scope: snapshot read vs current read",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"MVCC\",\"snapshot read\",\"current read\",\"locking\"]",
+    "principles": "MVCC only applies to snapshot reads (ordinary SELECT statements). Current reads (SELECT ... FOR UPDATE, LOCK IN SHARE MODE) and update operations always read the latest committed data and require locks.",
+    "pitfalls": "Assuming MVCC handles all reads equally; forgetting that updates and certain SELECTs bypass MVCC and use locking."
+  },
+  {
+    "subject": "RR phantom read prevention via next-key lock",
+    "category": "mysql",
+    "difficulty": "困难",
+    "tags": "[\"Repeatable Read\",\"phantom read\",\"next-key lock\",\"MVCC\"]",
+    "principles": "In Repeatable Read isolation level, phantom reads are prevented not by MVCC but by next-key locks. MVCC handles snapshot reads for consistency, while next-key locks (combination of record lock and gap lock) prevent new rows from being inserted into a range being read by a transaction.",
+    "pitfalls": "Believing MVCC alone prevents phantom reads; not understanding the role of gap locks in RR."
+  },
+  {
+    "subject": "Impact of no MVCC on MySQL concurrency",
+    "category": "mysql",
+    "difficulty": "困难",
+    "tags": "[\"MVCC\",\"concurrency\",\"locking\",\"performance\"]",
+    "principles": "Without MVCC, MySQL's concurrency would collapse: reads and writes would block each other. A transaction modifying data would cause all other queries to wait, increasing response times from milliseconds to seconds or timeouts. In high-update scenarios (e.g., e-commerce inventory), SELECTs would be locked by UPDATEs, causing page freezes. The Repeatable Read isolation level would be impossible because data could change between reads.",
+    "pitfalls": "Underestimating the severity of read-write blocking; thinking that pure locking can achieve similar isolation without performance loss."
+  },
+  {
+    "subject": "MVCC vs pure locking mechanism",
+    "category": "mysql",
+    "difficulty": "困难",
+    "tags": "[\"MVCC\",\"locking\",\"isolation\",\"undo log\"]",
+    "principles": "Without MVCC, isolation would rely solely on locks. MVCC enables snapshot reads without locks by using undo logs to retrieve historical versions. With MVCC, plain SELECTs are lock-free and read a snapshot from transaction start; only write operations acquire row locks. This allows reads and writes to proceed concurrently.",
+    "pitfalls": "Thinking that MVCC eliminates all locking; forgetting that write operations still require locks."
+  },
+  {
+    "subject": "MVCC vs Redis atomic operations",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"MVCC\",\"Redis\",\"atomicity\",\"concurrency\"]",
+    "principles": "Redis does not need MVCC because its operations are atomic and fast, executed in memory. MySQL, being a persistent storage with high I/O cost, would suffer from read-write blocking without MVCC, leading to low disk utilization and QPS stuck at hundreds or thousands.",
+    "pitfalls": "Assuming all databases require MVCC; not considering the differences between in-memory and disk-based systems."
+  },
+  {
+    "subject": "MVCC implementation: hidden fields and undo log",
+    "category": "mysql",
+    "difficulty": "困难",
+    "tags": "[\"MVCC\",\"DB_ROLL_PTR\",\"DB_TRX_ID\",\"undo log\",\"version chain\"]",
+    "principles": "MVCC relies on two hidden fields: DB_TRX_ID (transaction ID that last modified the row) and DB_ROLL_PTR (pointer to undo log record). On each modification, the old value is written to the undo log, and pointers form a version chain. During a query, the transaction uses its own ID and the list of active transactions to determine which version to see.",
+    "pitfalls": "Not understanding how the version chain is traversed; confusing undo log with redo log."
+  },
+  {
+    "subject": "MVCC: space-for-time tradeoff",
+    "category": "mysql",
+    "difficulty": "中等",
+    "tags": "[\"MVCC\",\"performance\",\"concurrency control\"]",
+    "principles": "MVCC is a space-for-time tradeoff: it transforms concurrency control from 'queue for locks' to 'each sees their own version'. This is InnoDB's key to handling high-concurrency reads and writes.",
+    "pitfalls": "Ignoring the storage overhead of undo logs; assuming MVCC is free."
+  }
+]

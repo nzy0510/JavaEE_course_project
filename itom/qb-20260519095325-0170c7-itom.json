@@ -1,0 +1,1202 @@
+[
+  {
+    "subject": "实现一个简单的负载均衡器",
+    "category": "后端场景题",
+    "difficulty": "简单",
+    "tags": "[\"负载均衡\",\"轮询\",\"加权轮询\",\"Java\"]",
+    "principles": "核心是选节点策略。轮询通过维护一个计数器，每次请求取 (i++) % servers.size() 将流量分配到对应机器。加权轮询按权重展开成列表再轮询。生产环境使用平滑加权轮询（如Nginx）或响应时间权重、随机、最少活跃等策略（如Spring Cloud LoadBalancer），节点列表由Zookeeper或Nacos下发，配合健康检查自动剔除故障实例。关键是无状态、独立部署。客户端负载均衡（如Ribbon）在JVM内完成选择，省去网络跳转。",
+    "pitfalls": "简单轮询不考虑服务器负载差异；加权轮询展开列表可能导致请求分布不均匀；忽略健康检查可能导致请求发送到故障节点；有状态服务不适合简单轮询。"
+  },
+  {
+    "subject": "设计用户踢下线功能",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"会话管理\",\"Redis\",\"WebSocket\",\"网关\"]",
+    "principles": "本质是让用户会话失效，关键在于会话管理和实时通知。1）集中式存储session：用Redis统一存储token或sessionId，踢人时直接删除。2）前端轮询或WebSocket主动推送：建立用户级通道，踢人时发送消息让前端跳转登录页。3）网关层拦截续发请求：在网关（如Spring Cloud Gateway）校验token是否注销。4）考虑分布式场景：依赖外部存储如Redis，集群环境下所有网关实例更新本地缓存。典型流程：运营后台触发踢人→后台发消息到Redis Channel→所有网关实例更新本地缓存→新请求被拦截→WebSocket推送下线指令。注意粒度：按设备踢（多个登录点）或按账号踢（全下线），通过key维度区分。",
+    "pitfalls": "仅删除token而不通知前端，用户可能继续操作；单机内存Map在集群环境下不可用；忽略设备粒度可能导致误踢；未考虑WebSocket连接断开后的重连处理。"
+  },
+  {
+    "subject": "不使用大于小于号判断两个正整数大小",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"位运算\",\"数学思维\",\"Java\"]",
+    "principles": "1）减法判断符号位：计算a-b，通过右移63位取符号位判断正负。2）逐位比较：从高位到低位找第一个不同位，谁那位是1谁大。3）除法特性：a/b大于1则a>b，但有精度问题。最直接方案是减法+符号位检测，位扫描适合特定场景（如不支持算术运算的环境）。",
+    "pitfalls": "减法可能溢出，需转long；逐位比较效率较低；除法有精度问题且需处理除零；面试时只写第一种即可，第二种作为加分项。"
+  },
+  {
+    "subject": "ArrayList中1亿条数据去重",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"去重\",\"HashSet\",\"内存优化\",\"大数据\"]",
+    "principles": "核心利用哈希结构唯一性，将数据放入HashSet或LinkedHashSet（保序）。但1亿条数据内存占用大，需评估单机内存。内存吃紧时优先分批处理。若数据量过大单机无法处理，使用Spark/Flink做分布式去重，或写入HBase/Redis利用外部存储唯一键。若数据为整数且范围有限，可用RoaringBitmap压缩到几十MB。",
+    "pitfalls": "直接使用ArrayList去重性能极差；忽略内存评估可能导致OOM；未考虑业务顺序要求；分布式去重需考虑数据倾斜和网络开销。"
+  },
+  {
+    "subject": "设计点赞系统",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"系统设计\",\"Redis\",\"消息队列\",\"数据一致性\"]",
+    "principles": "分层架构：前端写请求先入消息队列（如Kafka）削峰填谷。数据存储分两层：热数据用Redis（Set记录点赞用户，INCR维护计数），定时任务异步落库（MySQL/TiDB）保证最终一致性。去重通过Redis Set的SADD/SREM实现。热点key可分片计数（如user_id % 16分16个key）。",
+    "pitfalls": "直接操作数据库扛不住高并发；未考虑去重导致重复点赞；热点key导致Redis性能瓶颈；异步落库可能丢失数据；取消点赞需同步更新计数。"
+  },
+  {
+    "subject": "MySQL索引有效性及排查",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"MySQL\",\"索引\",\"执行计划\",\"SQL优化\"]",
+    "principles": "索引失效常见原因：在索引字段上使用函数操作、隐式类型转换、联合索引未遵守最左前缀原则、like以%开头。排查核心是使用EXPLAIN分析SQL，关注type（至少range）、key（实际使用的索引）、Extra（Using index表示覆盖索引，Using filesort/temporary需优化）。线上可用slow query log配合pt-query-digest分析慢查询。数据量小时优化器可能放弃索引，一般无需处理。",
+    "pitfalls": "认为索引一定有效；忽略隐式类型转换；联合索引顺序错误；过度索引影响写性能；未使用覆盖索引导致回表。"
+  },
+  {
+    "subject": "MySQL SQL调优",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"MySQL\",\"SQL调优\",\"索引\",\"慢查询\"]",
+    "principles": "第一步开启慢查询日志，捞出慢SQL。用explain分析执行计划，关注type（避免ALL/index，争取range/ref）、Extra（避免Using filesort/temporary）。索引设计结合查询条件，遵守最左前缀原则。注意索引成本，写多读少的表不宜过多索引。大字段用前缀索引或单独存储。单表数据上亿考虑分库分表（如ShardingSphere），但需处理跨库join和事务。热点数据可放Redis缓存，注意缓存穿透、击穿等问题。",
+    "pitfalls": "未先定位慢SQL就盲目调优；忽略索引成本导致写入变慢；分库分表后未考虑跨库查询和事务；缓存使用不当导致数据不一致。"
+  },
+  {
+    "subject": "MySQL深度分页问题解决",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"MySQL\",\"分页\",\"性能优化\",\"游标\"]",
+    "principles": "深度分页使用LIMIT offset, size时，大offset导致扫描大量数据。解决思路是避免大offset，使用基于游标的分页，即利用索引字段（如主键）做条件过滤。例如：SELECT * FROM table WHERE id > last_id ORDER BY id LIMIT 20。",
+    "pitfalls": "直接使用LIMIT大offset导致性能问题；未考虑排序字段的唯一性；游标分页在数据删除后可能出现间隙；不支持随机跳页。"
+  },
+  {
+    "subject": "MySQL深度分页优化",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"MySQL\",\"分页\",\"性能优化\",\"索引\"]",
+    "principles": "深度分页性能问题的根源是LIMIT offset, size依赖物理偏移，offset越大扫描行数越多。解决方案是使用基于游标的分页，利用索引字段（如主键ID）做条件过滤，例如WHERE id > last_id ORDER BY id LIMIT 20，这样能走索引且查询效率稳定在O(log n)。如果业务必须支持跳转到第N页，可考虑延迟关联或维护分页索引表，但成本较高，推荐前端改为'加载更多'模式。",
+    "pitfalls": "常见错误是继续使用大offset的LIMIT分页，或者试图通过增加缓存解决所有问题，而忽略了索引优化。面试陷阱可能包括：问是否可以用覆盖索引优化，但实际深度分页即使覆盖索引也需要扫描大量行；或者问是否可以用子查询优化，但子查询也可能性能不佳。"
+  },
+  {
+    "subject": "Redis机器爆了如何优化",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"Redis\",\"性能优化\",\"大Key\",\"热Key\",\"持久化\"]",
+    "principles": "Redis机器扛不住时，先排查内存、CPU、网络或连接数问题。常见原因包括：大Key（用redis-cli --bigkeys扫描，拆分为小Hash或本地缓存）、热Key（多级缓存如Caffeine，或Redis分片打散）、持久化策略（RDB fork卡主线程，AOF配置appendfsync everysec平衡性能和安全）、连接数过多（使用连接池，Spring Boot推荐Lettuce基于Netty的长连接模型）。最后才考虑横向扩容，如Redis Cluster或云厂商方案。",
+    "pitfalls": "常见错误是直接加机器而不分析根因，或者忽略持久化配置的影响。面试陷阱可能包括：问是否可以通过调整maxmemory策略解决，但实际可能只是临时缓解；或者问是否可以用Redis Cluster自动解决所有问题，但运维复杂度高。"
+  },
+  {
+    "subject": "Excel导出慢优化",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"Excel导出\",\"性能优化\",\"POI\",\"异步处理\"]",
+    "principles": "导出慢通常卡在数据查询和文件生成。数据查询改用游标分页（基于主键ID）替代OFFSET/LIMIT，减少数据库压力。文件生成使用SXSSFWorkbook（基于临时文件缓冲，只保留固定行数在内存）替代传统POI同步写入，避免OOM。进一步可边查边写流式处理。体验优化采用异步导出+消息通知，用户提交任务后释放连接，后台用消息队列驱动执行，完成后再通知。并发导出多时加限流，用Redis统计任务状态。",
+    "pitfalls": "常见错误是直接使用POI的XSSFWorkbook一次性加载所有数据，或者单线程同步导出导致前端卡死。面试陷阱可能包括：问是否可以用多线程并行查询加速，但要注意数据库连接和内存控制；或者问是否可以用文件流直接返回，但大文件可能超时。"
+  },
+  {
+    "subject": "百万级Excel导入注意点",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"Excel导入\",\"EasyExcel\",\"批量插入\",\"异步处理\"]",
+    "principles": "处理百万行Excel导入需解决大文件解析和海量数据写入。必须用流式解析（如EasyExcel基于SAX模式，边读边处理，内存只保留固定行数）。数据库写入要分批批量INSERT（每批500~1000条），结合事务每批提交一次。采用异步+队列削峰，前端上传后立即返回，后台用消息队列逐步消费。加进度反馈和错误回滚，用Redis记录当前行数，出错时定位到具体行并支持重试或跳过。",
+    "pitfalls": "常见错误是使用POI的XSSF全量加载导致OOM，或者单条INSERT导致性能极差。面试陷阱可能包括：问是否可以用多线程并行解析，但要注意文件解析的线程安全性；或者问是否可以直接使用数据库导入工具，但可能缺乏业务校验。"
+  },
+  {
+    "subject": "订单同时被微信和支付宝支付的处理",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"订单系统\",\"幂等性\",\"分布式\",\"支付\"]",
+    "principles": "订单系统必须保证一笔订单只能成功支付一次，核心是幂等性设计。订单服务收到支付请求时先查订单状态，已支付则直接返回成功。支付单设计唯一业务流水号（如订单ID+渠道），利用MySQL唯一约束防止重复插入。状态机控制订单状态从'待支付'到'已支付'单向变更，第二次更新因状态不符或唯一键冲突被拒绝。典型做法是'防重'前置，可用Redis缓存支付结果减少数据库压力，或通过消息去重机制辅助。",
+    "pitfalls": "常见错误是仅依赖数据库唯一索引，但未考虑并发时的状态检查。面试陷阱可能包括：问是否可以用分布式锁解决，但锁的粒度可能影响性能；或者问是否可以用乐观锁，但版本号冲突处理不当。"
+  },
+  {
+    "subject": "订单取消时用户刚好付款的处理",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"订单系统\",\"并发\",\"状态机\",\"最终一致性\"]",
+    "principles": "订单取消时用户付款是状态冲突问题，核心是保证最终一致性。思路是'以支付为准'，所有状态变更走可靠事件驱动。用户点击取消后进入'取消中'状态，不直接关单。支付回调处理时先查订单状态，若发现正在取消，通过分布式锁或版本号控制判断取消请求是否在支付消息之前到达。使用SQL UPDATE orders SET status='PAID', version=version+1 WHERE order_id=? AND status IN ('CREATED','CANCELING') AND version=?，更新成功则支付胜出，失败则走补偿逻辑（如退款）。实际项目通过每日对账发现异常订单并后台补单。",
+    "pitfalls": "常见错误是依赖人工判断或简单的时间比较，缺乏幂等和补偿设计。面试陷阱可能包括：问是否可以用数据库事务解决，但跨服务事务难以保证；或者问是否可以用消息队列顺序消费，但消息可能乱序。"
+  },
+  {
+    "subject": "RPC超时时间设置考虑",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"RPC\",\"超时\",\"链路\",\"Feign\",\"Spring Cloud\"]",
+    "principles": "RPC超时设置需逐层推演。链路传导：网关总超时需大于所有下游RPC超时之和，并发调用时整体超时可能翻倍。逐层收敛：越靠近底层超时越短，如缓存层<50ms，数据库查询>200ms需优化SQL。隔离与重试：不同服务独立配置超时，核心链路设更严苛超时；重试策略配合，如最多重试2次每次100ms，避免雪崩。默认值陷阱：框架默认超时可能无限等待或30秒，必须显式配置，如Feign的connectTimeout和readTimeout。",
+    "pitfalls": "常见错误是设置统一超时或忽略默认值，导致慢调用拖死线程池。面试陷阱可能包括：问是否可以通过增加超时时间解决慢查询，但实际应优化SQL；或者问是否可以不设超时，但可能导致资源耗尽。"
+  },
+  {
+    "subject": "Feign超时配置",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"Feign\",\"Spring Cloud Alibaba\",\"超时配置\"]",
+    "principles": "Feign超时需显式配置connectTimeout和readTimeout，通过@FeignClient的configuration属性指定配置类，在配置类中定义Request.Options Bean。调用链路应遵循上游宽松、下游收紧的漏斗原则，配合SkyWalking或Prometheus监控P99延迟动态调整。",
+    "pitfalls": "常见错误是未配置超时导致默认值过长或过短，引发服务雪崩；或配置类未生效。"
+  },
+  {
+    "subject": "数据库连接池爆满排查",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"数据库连接池\",\"Druid\",\"慢查询\",\"Arthas\"]",
+    "principles": "连接池爆满表现为接口超时、activeCount接近maxActive。排查需从应用和数据库两层入手：应用层检查连接未归还（如try-with-resources未close、事务范围过大、异步线程事务），数据库层检查慢查询（CPU打满、Sending data会话）。步骤：1）确认是连接池耗尽还是数据库处理不过来；2）用Arthas dump线程栈找WAITING在getConnection的线程；3）结合慢SQL日志；4）检查@Transactional传播行为和作用范围。",
+    "pitfalls": "常见陷阱是只关注应用层而忽略数据库慢查询，或未使用工具定位具体线程。"
+  },
+  {
+    "subject": "订单列表全量同步问题",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"订单列表\",\"分页查询\",\"增量同步\",\"缓存\"]",
+    "principles": "全量同步在数据量大时会导致查询慢、内存压力大。正确做法：分页查询加条件过滤；系统间同步应使用增量同步+长轮询或WebSocket推送，客户端通过lastTimestamp拉取新增/变更数据。全量同步仅适合首次加载或数据修复。",
+    "pitfalls": "常见错误是未区分普通查询和系统间同步，全量同步未加防刷机制。"
+  },
+  {
+    "subject": "JDK序列化问题排查",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"JDK序列化\",\"Serializable\",\"serialVersionUID\",\"transient\"]",
+    "principles": "排查序列化问题需关注：1）类实现Serializable并显式定义serialVersionUID；2）非瞬态字段必须可序列化；3）静态和transient字段不被序列化；4）父类未实现Serializable时子类序列化仅保存子类字段；5）不同JVM版本间序列化格式可能有差异，建议用JSON或Protobuf。",
+    "pitfalls": "常见陷阱是未定义serialVersionUID导致类变更后反序列化失败，或忽略父类序列化问题。"
+  },
+  {
+    "subject": "Spring Cloud Gateway 500错误排查",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"Spring Cloud Gateway\",\"500错误\",\"调试\",\"过滤器\"]",
+    "principles": "排查500错误需先开debug日志（org.springframework.cloud.gateway包），检查FilteringWebHandler等组件执行路径。常见原因：自定义GlobalFilter空指针、熔断fallback处理不当、跨域配置错误。用curl直接打网关判断是网关层还是下游问题。",
+    "pitfalls": "常见陷阱是直接排查下游服务而忽略网关层问题，或手动设置500状态码条件过宽。"
+  },
+  {
+    "subject": "Redis Sorted Set实现Top N排行榜",
+    "category": "后端场景题",
+    "difficulty": "简单",
+    "tags": "[\"Redis\",\"Sorted Set\",\"排行榜\",\"ZSet\"]",
+    "principles": "使用Redis的Sorted Set，商品ID作为member，销量作为score，通过incrementScore更新销量，reverseRange按分数倒序取Top N。底层跳表+hash实现O(log N)复杂度。注意按类目分桶避免单key过大，支持日期维度可每天生成新key。",
+    "pitfalls": "常见错误是所有商品放一个key导致阻塞，或未考虑数据归档。"
+  },
+  {
+    "subject": "朋友圈点赞功能设计",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"朋友圈\",\"点赞\",\"Redis\",\"高并发\",\"消息队列\"]",
+    "principles": "设计需平衡读写性能：数据模型用点赞记录表和缓存计数器；Redis存like_count:feed_id和Set存点赞用户ID（SADD防重复）；高并发写用消息队列削峰；展示时只显示总数和前几个好友，全部点赞分页查库。",
+    "pitfalls": "常见陷阱是未处理重复点赞、热点动态直接写数据库导致瓶颈。"
+  },
+  {
+    "subject": "分布式锁实现方式",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"分布式锁\",\"Redis\",\"ZooKeeper\",\"数据库\"]",
+    "principles": "三种常见实现：1）数据库（唯一索引或乐观锁），性能差；2）Redis（SET NX PX原子操作+Lua脚本释放，Redisson支持可重入和看门狗）；3）ZooKeeper（临时顺序节点+Watch，Curator封装）。Redis方案性能好、易落地，ZooKeeper一致性更强但复杂度高。",
+    "pitfalls": "常见陷阱是Redis锁未用Lua脚本释放导致误删，或ZooKeeper锁未处理会话超时。"
+  },
+  {
+    "subject": "分布式锁实现方案：Redis与ZooKeeper对比",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"分布式锁\",\"Redis\",\"ZooKeeper\",\"Redisson\",\"Curator\"]",
+    "principles": "Redis方案利用SET key value NX PX milliseconds原子操作，value用随机字符串或线程ID防误删，释放锁用Lua脚本保证原子性。Redisson支持可重入和看门狗自动续期。ZooKeeper方案利用临时顺序节点和Watch机制，最小序号节点获得锁，Curator封装了分布式锁逻辑。Redis性能好、易落地，但锁过期时间难定；ZooKeeper一致性更强但复杂度高。",
+    "pitfalls": "常见错误包括：自己从零实现锁逻辑、未处理锁过期导致业务未完成锁被释放、未使用Lua脚本导致释放锁非原子、忽略可重入和自动续期需求。"
+  },
+  {
+    "subject": "接口每分钟调用次数统计：滑动窗口计数器实现",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"滑动窗口\",\"计数器\",\"高并发\",\"AtomicInteger\",\"ConcurrentHashMap\"]",
+    "principles": "每分钟初始化一个桶，key为接口名+分钟级时间戳，value用AtomicInteger存储调用量。请求进来时计算当前分钟key，get or create桶后increment。过期桶定时清理，如保留最近5分钟。高并发下可用本地缓存+批量上报到Redis或Kafka，如每10秒flush一次。核心代码：ConcurrentHashMap<String, AtomicInteger> counter = new ConcurrentHashMap<>(); String key = \"api:/user/get:\" + (System.currentTimeMillis() / 60000); counter.computeIfAbsent(key, k -> new AtomicInteger()).incrementAndGet();",
+    "pitfalls": "常见错误包括：使用synchronized导致性能瓶颈、未处理桶过期导致内存溢出、未考虑分布式场景下计数一致性。AtomicInteger的CAS操作在大多数场景足够快，无需加锁。"
+  },
+  {
+    "subject": "消息队列故障兜底改造方案",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"消息队列\",\"降级\",\"本地缓存\",\"高可用\",\"补偿\"]",
+    "principles": "核心是保证关键链路可走通，引入降级和本地缓存机制。方案包括：1）将消息写入数据库待发送表，MQ恢复后异步补发；2）用本地内存队列（如Disruptor或BlockingQueue）暂存，配合健康检查开关自动切换；3）多活架构如RocketMQ Dledger模式，或双通道镜像到分布式缓存。代码关键：if (mqService.isHealthy()) { mqService.send(msg); } else { localQueue.offer(msg); }。恢复时需补偿流程，加监控和告警。",
+    "pitfalls": "常见错误包括：未考虑业务容忍度一刀切做兜底、本地队列未控制大小导致OOM、恢复时未做批量重放导致数据丢失、缺少监控告警。金融类交易必须有兜底，日志采集类可忽略。"
+  },
+  {
+    "subject": "消息队列推模式与拉模式对比",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"消息队列\",\"推模式\",\"拉模式\",\"Kafka\",\"RocketMQ\",\"RabbitMQ\"]",
+    "principles": "推模式（Push）服务端主动发消息，实时性好但消费者可能被压垮。拉模式（Pull）消费者自取，灵活性高但可能有延迟。混合路线如Kafka用长轮询模拟push，RabbitMQ配合QoS限流。核心在于流量控制和负载均衡，push易雪崩，pull增加broker查询压力。选择取决于吞吐要求、消费稳定性、网络开销。日志收集用pull更稳，订单通知适合可控push+限流。",
+    "pitfalls": "常见错误包括：未根据业务场景选择模式、忽略消费者处理能力导致压垮、pull轮询间隔设置不当导致延迟或资源浪费。最终选择由业务决定，非技术决定。"
+  },
+  {
+    "subject": "限流算法：计数器、滑动窗口、漏桶、令牌桶",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"限流\",\"计数器\",\"滑动窗口\",\"漏桶\",\"令牌桶\",\"Sentinel\",\"Guava\"]",
+    "principles": "限流控制输入输出流量，防止高并发压垮服务。常见算法：1）计数器：简单但有时间边界突刺问题；2）滑动窗口：将时间片拆成小格子，流量更平滑，Sentinel实现；3）漏桶：恒定速率处理，削峰填谷但无法应对burst；4）令牌桶：允许一定突发，Guava RateLimiter使用。分布式限流常用Redis INCR+EXPIRE，或Sentinel中间件。",
+    "pitfalls": "常见错误包括：计数器未处理边界突刺、漏桶无法应对合理突发、令牌桶参数设置不当导致限流过严或过松、分布式限流未考虑原子性。"
+  },
+  {
+    "subject": "线上CPU飙高排查方法",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"CPU\",\"排查\",\"jstack\",\"top\",\"性能调优\"]",
+    "principles": "三步走：先看系统（top看CPU使用率），再看进程（top按P排序找Java PID），最后看线程和堆栈（top -H -p <PID>找高消耗TID，转16进制后用jstack抓堆栈）。常见场景：正则灾难性回溯、大对象JSON序列化、外部依赖超时导致线程池积压。容器环境需进宿主机或kubectl exec。",
+    "pitfalls": "常见错误包括：未先确认整体CPU使用率直接查线程、忽略容器环境差异、未将TID转16进制导致jstack无法定位、未关注RUNNABLE状态线程。"
+  },
+  {
+    "subject": "数据库不停服迁移方案",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"数据库迁移\",\"双写\",\"数据校验\",\"Canal\",\"DataX\"]",
+    "principles": "核心是双写同步和数据校验。步骤：1）结构兼容改造（新增字段设默认值）；2）开启双写（同时写老库和新库，读只从老库）；3）跑数据迁移工具（如DataX或Canal+Kafka+Flink）搬历史数据；4）数据比对（如DataDiff）；5）切换读流量到新库；6）下线双写。每步需监控和回滚方案，如用Canal监听binlog做反向补偿。",
+    "pitfalls": "常见错误包括：未做结构兼容导致双写报错、未校验数据一致性直接切换、缺少回滚方案、迁移工具未追增量导致数据丢失。"
+  },
+  {
+    "subject": "Java写入文件到磁盘的底层过程",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"文件IO\",\"Page Cache\",\"系统调用\",\"fsync\",\"脏页回写\"]",
+    "principles": "过程：1）用户态缓冲（Java缓冲区，无系统调用）；2）内核页缓存（flush或缓冲满触发write系统调用，数据到Page Cache）；3）脏页回写（内核线程pdflush后台写入磁盘，受vm.dirty_ratio等参数控制）；4）块设备层与磁盘控制器（经VFS、文件系统、IO调度器）；5）持久化确认（磁盘控制器写入非易失介质）。确保落盘需调channel.force(true)对应fsync()。",
+    "pitfalls": "常见错误包括：认为write()立即落盘、忽略Page Cache导致断电丢数据、未使用fsync导致数据未持久化、未理解脏页回写时机。"
+  },
+  {
+    "subject": "线程安全HashMap的设计与无锁方案",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"HashMap\",\"ConcurrentHashMap\",\"线程安全\",\"无锁设计\"]",
+    "principles": "HashMap本身非线程安全，多线程并发写会导致链表成环、数据覆盖等问题。JDK提供Collections.synchronizedMap粗粒度锁方案，性能差。ConcurrentHashMap通过分段锁（JDK7 ReentrantLock）或CAS+synchronized（JDK8）实现细粒度锁，读操作基本无锁。无锁方案包括ConcurrentSkipListMap（基于跳表，CAS维护指针）和CopyOnWriteMap（写时复制，适合读多写少场景）。核心是减少锁竞争，而非消灭并发问题。",
+    "pitfalls": "常见误区是给HashMap外层套synchronized，导致性能瓶颈。自研时应优先参考JDK已有方案设计思想，避免从零造轮子。"
+  },
+  {
+    "subject": "防止用户重复下单的幂等性设计",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"幂等性\",\"重复下单\",\"库存预占\",\"Redis\"]",
+    "principles": "解决接口幂等性和库存预占合理性问题。前端生成一次性幂等令牌（token），后端校验token是否已使用（Redis缓存，TTL对齐订单超时）。库存预占使用Redis或数据库行锁标记预占状态，超时自动释放。典型实现：下单前申请token，请求携带token，校验通过后创建订单并标记token已用，重复提交直接返回原订单信息。",
+    "pitfalls": "token校验应作为前置过滤器，不经过主业务逻辑，以扛住刷单流量。库存预占不能直接扣减，需配合分布式事务或延迟释放机制。"
+  },
+  {
+    "subject": "微服务远程调用超时时间设置",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"微服务\",\"超时设置\",\"OpenFeign\",\"熔断\"]",
+    "principles": "超时时间无统一标准，内部服务响应100ms内正常，超时设为500ms-2s；复杂计算或外部依赖需5s以上。必须设置connect timeout和read timeout，避免线程长时间占用。考虑链路叠加，超时逐层递减。配合熔断器（Sentinel/Hystrix）防止雪崩。上线后通过Prometheus+Grafana监控P99/P999延迟调整阈值。",
+    "pitfalls": "不能无限等待，需设置合理超时。链路中每层超时时间需递减，避免整体卡顿。"
+  },
+  {
+    "subject": "线程池参数计算：1000任务0.1s响应1s",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"线程池\",\"并发\",\"性能优化\"]",
+    "principles": "总工作量100秒，响应时间1s约束下，最多容忍队列积压9个任务。所需并发数≈1000×0.1/1=100线程。使用SynchronousQueue避免任务堆积，拒绝策略用AbortPolicy。核心线程数设为100，最大线程数200，防止系统被打垮。纯计算任务偏向CPU密集，线程数不宜远超CPU核数。最终需压测验证。",
+    "pitfalls": "队列不能太大，否则任务堆积超时。最大线程数不宜过高，防止系统过载。"
+  },
+  {
+    "subject": "扫描线算法统计最大并发流量",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"扫描线算法\",\"大数据\",\"并发统计\"]",
+    "principles": "将时间段拆成事件点：开始时间+1，结束时间-1。按时间排序后扫描，累加变化值，最大值即峰值并发数。时间复杂度O(n log n)。数据量大时可分片处理（如Spark），先按小时分桶再精细计算。",
+    "pitfalls": "时间相同时结束事件优先，避免将刚好接续的时间算成重叠。"
+  },
+  {
+    "subject": "避免配置变更引发生产事故的防护机制",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"配置管理\",\"灰度发布\",\"熔断\",\"审计\"]",
+    "principles": "关键参数走配置中心（Apollo/Nacos），禁止硬编码，配置变更需审计日志。多级审批和熔断策略，如折扣低于阈值自动拦截。灰度发布，先推1%用户，监控无异常再放量。核心业务需反向校验，优惠力度超出合理区间直接拒绝。系统需有自保能力，变更只是输入，生效由流程控制。",
+    "pitfalls": "不能依赖人工审核，需体系化防护。配置推送优先选支持监听回调的中间件。"
+  },
+  {
+    "subject": "接口变慢的排查方法与常见原因",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"性能排查\",\"监控\",\"慢查询\",\"GC\"]",
+    "principles": "从链路逐层排查：先看监控大盘（SkyWalking/Prometheus）定位耗时突增点。常见原因：应用代码（SQL慢查询加索引）、外部依赖（超时熔断）、中间件瓶颈（缓存击穿用空值缓存+本地缓存）、基础设施（JVM GC频繁用Arthas定位）。先看全局指标（CPU/RT/QPS/错误率），再下钻。",
+    "pitfalls": "不要一上来查代码，先看全局指标。工具链需配齐，否则盲目排查。"
+  },
+  {
+    "subject": "编写必定产生死锁的代码（不使用Thread.sleep）",
+    "category": "后端场景题",
+    "difficulty": "简单",
+    "tags": "[\"死锁\",\"多线程\",\"并发\"]",
+    "principles": "死锁需同时满足互斥、占有并等待、不可抢占、循环等待四个条件。示例：两个线程分别持有锁A和锁B，并尝试获取对方锁，形成循环等待。",
+    "pitfalls": "不能使用Thread.sleep，需通过锁顺序设计确保死锁必然发生。"
+  },
+  {
+    "subject": "MySQL突发读流量缓存策略",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"MySQL\",\"缓存\",\"高并发\"]",
+    "principles": "MySQL扛不住突发读流量，常用空值缓存+本地缓存兜底。空值缓存防止缓存穿透，本地缓存（如Caffeine）减少对MySQL的直接访问，提升响应速度。",
+    "pitfalls": "忽略空值缓存可能导致缓存穿透；本地缓存未设置过期时间或容量限制，可能内存溢出。"
+  },
+  {
+    "subject": "JVM老年代频繁GC导致接口毛刺",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"JVM\",\"GC\",\"性能优化\"]",
+    "principles": "老年代频繁GC（Full GC间隔小于10分钟）会导致接口响应时间波动。通过jstat -gc或Arthas查看GC日志，用Arthas trace命令定位耗时方法，排查内存泄漏。",
+    "pitfalls": "直接查代码而非先看全局指标（CPU、RT、QPS、错误率）；忽略GC日志分析。"
+  },
+  {
+    "subject": "Java死锁代码实现与原理",
+    "category": "后端场景题",
+    "difficulty": "简单",
+    "tags": "[\"Java\",\"多线程\",\"死锁\"]",
+    "principles": "死锁需四个条件：互斥、占有并等待、不可抢占、循环等待。通过两个线程以相反顺序持有和请求两个锁（如lockA和lockB）即可触发。jstack可检测到'Found one Java-level deadlock'。",
+    "pitfalls": "使用Thread.sleep()模拟死锁而非真实竞争；忽略锁顺序设计。"
+  },
+  {
+    "subject": "无锁线程安全单例实现",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"Java\",\"设计模式\",\"多线程\"]",
+    "principles": "静态内部类实现懒加载，JVM保证类加载线程安全；枚举实现更安全（防反射、序列化）。饿汉式可能浪费资源；双重检查锁需volatile防止指令重排序。",
+    "pitfalls": "使用CAS自旋实现单例增加复杂度；DCL未加volatile导致对象未完全构造。"
+  },
+  {
+    "subject": "敏感词过滤功能实现",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"算法\",\"性能优化\",\"安全\"]",
+    "principles": "核心用Trie树（字典树）实现O(n)匹配；工程上使用开源库如sensitive-word（基于DFA）；高并发下缓存Trie树到本地内存，定时刷新；定义处理器接口支持替换、拦截、标记等策略。",
+    "pitfalls": "直接正则替换导致性能问题；忽略中文分词歧义、变形词（如f**k）；未考虑白名单。"
+  },
+  {
+    "subject": "外排序处理大数据（500G数据4G内存）",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"算法\",\"大数据\",\"排序\"]",
+    "principles": "分治思想：将大文件切分成多个4G小文件，每个小文件内部排序（快排或归并），然后多路归并（最小堆）合并。磁盘IO是瓶颈，需管理缓冲区。类似Hadoop MapReduce排序。",
+    "pitfalls": "忽略缓冲区管理导致频繁系统调用；未考虑多路归并时文件句柄限制。"
+  },
+  {
+    "subject": "IP地址数据库存储类型选择",
+    "category": "后端场景题",
+    "difficulty": "简单",
+    "tags": "[\"MySQL\",\"数据库设计\",\"性能优化\"]",
+    "principles": "IPv4用INET_ATON转无符号整数存INT UNSIGNED（4字节）；IPv6用INET6_ATON转VARBINARY(16)。避免varchar存储，节省空间且索引效率高。注意Java等语言用long或BigInteger处理INT UNSIGNED溢出。",
+    "pitfalls": "直接存字符串导致空间浪费和查询慢；忽略整数溢出问题。"
+  },
+  {
+    "subject": "分布式锁与并发度权衡",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"分布式锁\",\"高并发\",\"一致性\"]",
+    "principles": "分布式锁保证数据一致性，但降低并发度。通过缩小锁粒度（如商品ID分段锁）、使用无锁方案（Redis DECR原子操作）或异步解耦（TCC、消息队列）来平衡。Redisson的RLock支持自动续期和Lua脚本原子性。",
+    "pitfalls": "未设置锁过期时间导致死锁；锁粒度过大影响吞吐；忽略最终一致性场景。"
+  },
+  {
+    "subject": "MQ延迟队列实现定时触发",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"MQ\",\"延迟队列\",\"定时任务\",\"消息可靠性\"]",
+    "principles": "使用MQ延迟队列发送一条消息，到达指定时间后自动触发提醒，无需查库。适用于对准确性要求高的场景，但需确保MQ不丢消息。大多数业务用方案1+2（如定时任务+数据库轮询）即可，简单可控；延迟队列运维成本高，搞不定反而背锅。",
+    "pitfalls": "忽略MQ消息丢失风险，未配置持久化或确认机制；过度依赖延迟队列导致运维复杂；未考虑延迟队列的精度和可靠性限制。"
+  },
+  {
+    "subject": "调用第三方接口的注意事项",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"第三方接口\",\"超时控制\",\"重试机制\",\"熔断降级\",\"幂等性\",\"监控告警\"]",
+    "principles": "调用第三方接口需考虑：1）超时控制：连接超时1-3秒，读取超时5-10秒，Spring Boot中手动配置RestTemplate或WebClient；2）重试机制：网络抖动可重试2-3次，加退避策略（如1秒、2秒），支付类等带副作用的操作禁止自动重试；3）熔断降级：使用Sentinel或resilience4j，错误率超50%熔断几分钟，走本地缓存或默认值；4）数据安全：敏感字段走HTTPS，secret key放header且不记日志；5）幂等性设计：用Redis存唯一任务ID，10分钟内重复请求忽略；6）监控告警：每个外部调用打埋点，统计成功率、P95耗时，用Prometheus+Grafana+AlertManager。",
+    "pitfalls": "不设超时导致连接池占满；重试无退避或对非幂等接口自动重试；熔断缺失导致下游压力传递；敏感信息泄露；未做幂等导致重复扣款或重复触发；缺乏监控无法及时发现故障。"
+  },
+  {
+    "subject": "购物车功能设计",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"购物车\",\"Redis\",\"存储选型\",\"并发控制\",\"合并策略\"]",
+    "principles": "购物车设计要点：1）存储选型：未登录用LocalStorage/Cookie，登录后同步到服务端Redis，key为cart:userId，value用hash结构（field商品ID，value数量和扩展信息）；2）防超卖：下单时校验库存，购物车允许临时多加，但数量不能为负；3）合并场景：登录后本地与服务器记录合并，相同商品数量叠加不覆盖；4）接口设计：GET /cart拉列表，POST /cart增删改，DELETE /cart/{itemId}删；5）性能：读多写少，可加本地缓存但TTL不宜过长；6）重点在状态同步和边界控制，复杂事务留给订单系统。",
+    "pitfalls": "每次操作都查库存导致系统崩溃；合并时直接覆盖而非叠加；购物车引入复杂事务；本地缓存TTL过长导致与促销活动不一致。"
+  },
+  {
+    "subject": "系统每晚固定时段瘫痪的原因排查",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"故障排查\",\"定时任务\",\"Full GC\",\"资源耗尽\",\"雪崩\"]",
+    "principles": "每天固定时段瘫痪一小时，常见原因：1）定时批处理任务冲击（如xxl-job/Quartz调度的数据同步、报表生成），数据量大且未分片导致CPU打满、连接池耗尽；2）JVM Full GC频繁，老年代对象堆积导致长时间STW；3）网络或依赖组件问题，如日志归档时NFS挂载点卡住，或下游限流导致线程池耗尽。防护措施：定时任务加熔断和超时控制（如Future.get设置超时），使用分片广播拆解压力。",
+    "pitfalls": "直接猜测原因而非从时间规律和系统行为入手；忽略资源隔离和流量治理；未对定时任务做熔断和超时控制。"
+  },
+  {
+    "subject": "抢红包金额分配算法",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"红包算法\",\"线段切割法\",\"二倍均值法\",\"Redis\",\"Lua\"]",
+    "principles": "两种常见算法：1）线段切割法：将总金额视为线段，随机切分，每段为一人金额，保证总额不变且机会均等；2）二倍均值法（期望值控制）：每次抢时，当前可抢金额上限为剩余人均金额的2倍，再随机，避免前多后少。代码核心：控制随机范围，最后一人拿完剩余。实际系统结合Redis+Lua保证原子性，防止超发。微信早期用线段切割，后优化为期望控制策略。",
+    "pitfalls": "未考虑浮点数精度导致总额偏差；未使用原子操作导致超发；算法选择不当导致体验差（如最后几人金额过小）。"
+  },
+  {
+    "subject": "线上CPU Load飙高排查方法",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"CPU\",\"排查\",\"jstack\",\"jstat\",\"Full GC\",\"死循环\"]",
+    "principles": "排查步骤：1）top看整体CPU和load average，记下高占用进程PID；2）top -H -p <PID>查看线程，按CPU排序，记下线程ID并转16进制；3）jstack抓线程栈，搜索16进制线程ID定位问题；4）常见原因：死循环、频繁GC、锁竞争、正则回溯爆炸；5）若频繁Full GC，用jstat -gcutil观察，jmap分析内存泄漏；6）线上避免jmap全量dump，优先用jcmd或async-profiler。",
+    "pitfalls": "线上直接执行jmap全量dump导致长时间STW；未先定位线程直接分析堆；忽略正则表达式导致的CPU问题。"
+  },
+  {
+    "subject": "40亿QQ号去重（1G内存限制）",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"布隆过滤器\",\"去重\",\"大数据\",\"内存优化\",\"BitSet\"]",
+    "principles": "1G内存约85亿bit，40亿QQ号用布隆过滤器，每个元素分配约2.1bit，哈希函数个数为2时误判率约百分之几。布隆过滤器底层为位数组+多个哈希函数，添加时置位，查询时所有位为1才认为存在。可用Redis的RedisBloom模块或Google Guava的BloomFilter实现。无需存储原始数据，效率高，但精确去重需结合外部存储二次验证。",
+    "pitfalls": "误判率不可接受时未做二次验证；哈希函数个数选择不当导致误判率过高；未考虑布隆过滤器不支持删除。"
+  },
+  {
+    "subject": "保证Redis中数据都是热点数据",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"Redis\",\"热点数据\",\"LFU\",\"TTL\",\"缓存淘汰\",\"预热\"]",
+    "principles": "方法：1）设置合理TTL（如5-10分钟），频繁访问的数据自动续期；2）配合LFU淘汰策略（volatile-lfu或allkeys-lfu），保留高频访问key；3）主动预热+延迟双删，上线前加载热点数据；4）旁路统计模块（如Flink）实时分析日志，定期更新Top N key。核心是读操作封装：redis.get(key)时若命中则续期，未命中则查库并回写。",
+    "pitfalls": "TTL设置过长导致冷数据滞留；未使用LFU而用LRU，无法准确识别高频访问；预热数据不准确导致缓存命中率低。"
+  },
+  {
+    "subject": "Redis热点数据管理策略",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"Redis\",\"缓存\",\"热点数据\",\"淘汰策略\"]",
+    "principles": "Redis热点数据管理依赖TTL、访问驱动和淘汰策略的配合。常用策略包括：1) 使用volatile-lfu或allkeys-lfu淘汰策略，让高频访问key保留；2) 主动预热，上线前将热门数据（如日志分析出的Top 20w商品）预加载到Redis；3) 监控访问频次，用Flink等实时分析日志，动态更新Top N key并淘汰低频key；4) 代码层面封装读操作，如先查Redis，未命中则查DB并设置过期时间（如5分钟）。核心是让系统自动识别热点，而非人工指定。",
+    "pitfalls": "常见错误：1) 依赖人工指定热点，导致热点变化时缓存失效；2) 未结合TTL和淘汰策略，导致冷数据长期占用内存；3) 预热时未考虑数据时效性，加载过时数据；4) 监控模块与Redis耦合过紧，影响性能。"
+  },
+  {
+    "subject": "接口响应慢的排查思路",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"性能优化\",\"故障排查\",\"监控\",\"数据库\"]",
+    "principles": "排查接口慢需从链路逐层分析：1) 先看监控大盘（CPU、内存、GC频率），GC频繁可能因堆内存不足或对象泄漏，用jstat和jmap分析；线程数飙升用jstack检查是否卡在数据库查询、死锁或远程调用超时。2) 检查依赖服务，用SkyWalking或Prometheus查看调用链耗时，若集中在远程调用则需超时控制和熔断。3) 数据库方面，开启慢查询日志，检查执行计划type是否为ALL（全表扫描），优化索引或SQL；连接池大小（如HikariCP maxPoolSize）设为20-50。4) 缓存穿透/雪崩导致DB压力，用布隆过滤器拦截非法key，热点key加本地缓存（如Caffeine）。5) 应用自身问题，如循环发SQL或synchronized锁整块逻辑，通过代码审查和APM工具定位。",
+    "pitfalls": "常见错误：1) 仅关注单点，忽略链路整体；2) 未先排除外部流量突增（如被刷），直接深入代码；3) 数据库优化时盲目加索引，忽略写性能影响；4) 缓存穿透保护仅依赖布隆过滤器，未考虑Redis挂掉的情况。"
+  },
+  {
+    "subject": "单体应用QPS达到1万是否需微服务化",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"架构设计\",\"微服务\",\"性能优化\",\"系统拆分\"]",
+    "principles": "单体应用能否扛住1万QPS取决于业务类型。简单CRUD可通过缓存、读写分离、垂直拆分（web和DB层）优化，许多公司几十万QPS靠单体+CDN+缓存+异步化支撑多年。微服务拆分主要为了解耦业务和提升迭代效率，而非应对QPS。当团队协作冲突、功能联调困难、发布周期变长时才需拆分。盲目拆分会引入网络复杂度、链路追踪、配置中心、服务治理、分布式事务等维护成本。建议先做逻辑拆分（按业务域划模块但部署在同一进程），通过包隔离和依赖管控暴露调用关系，再物理拆分。对于热点数据场景（如秒杀），更应优先使用本地缓存+分布式锁+热点探测。核心原则：性能瓶颈用缓存、异步、读写分离解决，架构腐化才用微服务解耦。",
+    "pitfalls": "常见错误：1) 将QPS作为微服务拆分的唯一理由；2) 拆分后未同步引入服务治理基础设施；3) 忽略热点数据场景的特殊优化；4) 直接物理拆分，未先做逻辑拆分验证。"
+  },
+  {
+    "subject": "跨多个服务的慢请求排查方法",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"分布式系统\",\"链路追踪\",\"故障排查\",\"SkyWalking\"]",
+    "principles": "排查跨服务慢请求需依赖分布式追踪工具（如SkyWalking、Pinpoint、Zipkin），它们自动生成traceId并透传下游。步骤：1) 获取慢请求traceId，在UI查看全链路拓扑；2) 重点分析每个span耗时，识别串行等待或并行瓶颈（如服务A调用B和C，C耗时800ms则问题在C）；3) 结合metrics和日志下钻，检查数据库慢查询、RPC调用延迟、线程池或连接池瓶颈；4) 注意异步场景（CompletableFuture、MQ）的上下文透传，需手动传递traceId。最终定位通常是某个高延迟节点引发雪崩，需将tracing、metrics、logging三者打通。",
+    "pitfalls": "常见错误：1) 未提前接入分布式追踪工具，依赖日志时间戳对齐；2) 忽略异步场景的traceId透传，导致追踪图断裂；3) 仅关注单个服务，未分析服务间调用关系；4) 未结合metrics和日志下钻，仅凭拓扑图判断。"
+  },
+  {
+    "subject": "Redis宕机后的系统保护策略",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"Redis\",\"高可用\",\"降级\",\"缓存\"]",
+    "principles": "Redis宕机时需防止数据库被突发流量打垮。策略：1) 加降级开关（如Apollo/Nacos配置中心），Redis异常时返回缓存默认值或走本地缓存（Caffeine），保住核心链路。2) 缓存穿透保护，Redis挂后布隆过滤器失效，需用请求合并或信号量限流（如Semaphore控制最多50个线程查库）。3) 提前配置持久化，如AOF everysec最多丢1秒数据，重启可恢复；纯内存模式恢复更慢。4) 架构上采用多级缓存（本地缓存+Redis集群），Redis宕机时本地缓存可短时支撑热点数据。核心设计原则：按Redis随时会挂来设计，抗住故障比追求性能更重要。",
+    "pitfalls": "常见错误：1) 仅依赖Redis高可用集群，未设计降级方案；2) 缓存穿透保护仅用布隆过滤器，未考虑Redis挂掉场景；3) 未配置持久化，导致数据全丢；4) 忽略本地缓存在Redis挂掉时的作用。"
+  },
+  {
+    "subject": "微服务自动发现原理",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"微服务\",\"服务发现\",\"Eureka\",\"Nacos\",\"Consul\"]",
+    "principles": "微服务间自动发现依赖服务注册与发现机制。核心流程：1) 服务启动时主动向注册中心（如Eureka、Consul、Nacos）注册自身信息（服务名、IP、端口、健康状态）。2) 调用方不直接连IP，而是向注册中心查询目标服务（如order-service）的可用实例列表。3) 调用方用负载均衡策略（如轮询）选择一个实例发起请求。4) 注册中心通过心跳机制保活，服务定期发送心跳，超时未收到则踢下线。5) 客户端通常缓存服务列表，即使注册中心挂掉也能靠本地缓存支撑。常见实现：Nacos加依赖配置，启动自动注册，其他服务用@LoadBalanced RestTemplate或Feign按服务名调用，发现和负载均衡透明。",
+    "pitfalls": "常见错误：1) 服务未配置健康检查，导致注册中心返回不可用实例；2) 心跳间隔设置不合理，频繁心跳增加网络开销；3) 客户端未缓存服务列表，注册中心挂掉后完全不可用；4) 忽略跨网络分区时的服务发现一致性。"
+  },
+  {
+    "subject": "单表数据量大的优化方法",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"数据库\",\"MySQL\",\"性能优化\",\"索引\"]",
+    "principles": "单表数据量大时，优化从存储结构、索引策略、SQL设计入手：1) 索引设计精准，避免全表扫描，但索引不是越多越好（写操作需维护B+树）；主键用自增整型减少回表成本。2) SQL避免select *，只查必要字段；分页查询用where id > last_id limit 10替代limit 1000000, 10，避免大偏移量扫描。3) 大字段（如text）拆到扩展表，用主键关联。4) 冷热数据分离，如订单表将历史数据归档到其他表或Hive，主表只留热点数据。5) 读写分离，写主库读从库，用MySQL主从同步+ShardingSphere读写路由分散压力。很多问题在百万行前不明显，千万级需提前规划。",
+    "pitfalls": "常见错误：1) 盲目加索引，忽略写性能影响；2) 分页查询使用大偏移量limit；3) 大字段留在主表拖慢查询；4) 未做冷热分离，历史数据占用大量空间；5) 读写分离未考虑主从延迟。"
+  },
+  {
+    "subject": "Java堆内存不变但进程内存持续增长的原因",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"Java\",\"内存泄漏\",\"堆外内存\",\"性能调优\"]",
+    "principles": "堆内存不变但进程内存增长，问题多在堆外内存或直接内存：1) DirectByteBuffer滥用（如Netty、RocketMQ），频繁申请堆外内存且回收不及时，虽在Old/Full GC时释放，但GC不频繁则持续占用。2) JNI调用或本地库内存泄漏（如C/C++ malloc未free）。3) 元空间（Metaspace）膨胀，动态生成类过多（如CGLIB、ASM、Groovy），可加-XX:MaxMetaspaceSize限制。4) 线程数飙升，每个线程栈默认1M（-Xss），上千线程可吃几个G，常见于线程池配置不合理（如newCachedThreadPool无限制）。5) 内存映射文件（MappedByteBuffer）映射大文件后不易释放。排查建议：用pmap -x <pid>看内存段分布，再用Native Memory Tracking（NMT）查看各部分明细。",
+    "pitfalls": "常见错误：1) 仅关注堆内存，忽略堆外内存监控；2) 未限制DirectBuffer大小或复用；3) 线程池未设置最大线程数；4) 未使用NMT等工具定位具体内存区域。"
+  },
+  {
+    "subject": "DirectByteBuffer分配与复用",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"Java\",\"内存管理\",\"ByteBuffer\"]",
+    "principles": "DirectByteBuffer每次分配堆外内存开销大，应复用或使用对象池。排查内存泄漏可用pmap -x查看anon段增长，或用NMT（Native Memory Tracking）分析Java各部分内存明细。",
+    "pitfalls": "频繁分配DirectByteBuffer而不释放会导致堆外内存泄漏，且不易被GC感知。"
+  },
+  {
+    "subject": "稀疏ID集合的高效存储：RoaringBitmap",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"数据结构\",\"Bitmap\",\"RoaringBitmap\",\"性能优化\"]",
+    "principles": "当ID范围大但实际数量少时，传统Bitmap浪费严重（如ID到10亿需GB级内存）。RoaringBitmap将整数拆为高16位key和低16位容器，稀疏时用短数组，密集时用bitmap，压缩空间且保持位运算优势。Java中可用org.roaringbitmap.RoaringBitmap。",
+    "pitfalls": "误用原生Bitmap处理稀疏数据导致内存爆炸；RoaringBitmap对连续ID更友好，极端稀疏时需结合跳表或哈希。"
+  },
+  {
+    "subject": "本地事务与远程操作的一致性保证",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"分布式事务\",\"TCC\",\"消息队列\",\"最终一致性\"]",
+    "principles": "本地事务和远程操作需保证一致性，本质是分布式事务问题。常见方案：1）TCC（Try-Confirm-Cancel）强一致性，但业务侵入大；2）基于消息队列的可靠事件，本地写事务记录+消息表，通过定时任务或binlog发送消息，消费端幂等重试。小公司可用数据库+消息表+扫描补发实现。",
+    "pitfalls": "未做幂等导致重复执行；TCC回滚逻辑复杂易出错；消息队列积压导致延迟。"
+  },
+  {
+    "subject": "多机部署下的用户登录信息共享",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"分布式会话\",\"Redis\",\"JWT\",\"负载均衡\"]",
+    "principles": "多机部署后会话状态需集中管理。主流方案：1）Redis集中存储（如Spring Session + Redis），应用无状态；2）JWT无状态方案，但无法中途撤销；3）IP Hash转发，但破坏负载均衡且单点故障会丢会话。生产环境推荐Redis，配合过期策略自动清理。",
+    "pitfalls": "JWT无法主动失效；IP Hash导致负载不均；Redis宕机需高可用方案。"
+  },
+  {
+    "subject": "请求响应时间从1秒优化到1毫秒",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"性能优化\",\"网络\",\"缓存\",\"异步\"]",
+    "principles": "系统性优化：1）网络层：CDN/边缘计算、长连接、HTTP/2；2）计算层：避免同步阻塞，用异步并行（如WebFlux）；3）存储层：多级缓存（Caffeine+Redis），写操作异步落库；4）架构层：预计算（Flink）、限流降级。",
+    "pitfalls": "过度优化非瓶颈点；响应式编程学习成本高；缓存一致性难保证。"
+  },
+  {
+    "subject": "基于WebSocket的IM协议设计",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"WebSocket\",\"IM\",\"协议设计\",\"Netty\"]",
+    "principles": "WebSocket提供全双工通信，IM协议需在其上构建消息体系：1）消息可靠性（ACK+重试）；2）消息顺序（sequence ID）；3）连接管理（心跳保活，30秒一次）；4）消息类型（单聊/群聊/通知）；5）离线消息（持久化+上线拉取）；6）安全鉴权（token）。服务端可用Netty+消息队列（Kafka）异步处理。",
+    "pitfalls": "未做心跳导致连接泄漏；消息顺序错乱；离线消息未持久化；鉴权缺失。"
+  },
+  {
+    "subject": "核心数据缓存预热实现",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"缓存\",\"预热\",\"热点数据\",\"一致性\"]",
+    "principles": "缓存预热需解决时机、范围、一致性：1）低峰期触发（如凌晨发布后自动执行）；2）只加载高频热点数据（基于历史日志分析）；3）预热后走正常读写穿透，写操作更新DB并失效缓存，设置TTL。可用@PostConstruct或调度平台（xxl-job）异步加载。",
+    "pitfalls": "全量加载导致预热时间过长；热点key识别不准；预热后未处理写操作导致脏数据。"
+  },
+  {
+    "subject": "服务重启后避免流量洪峰",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"高可用\",\"重连\",\"限流\",\"服务治理\"]",
+    "principles": "服务重启后客户端重连导致流量洪峰。解决方案：1）客户端指数退避重连（如Netty ExponentialBackOff）；2）服务端启动后先不对外暴露（注册为非健康状态，等组件就绪）；3）网关层全局限流缓冲（如Sentinel逐步放行）；4）连接建立后延迟发业务请求。",
+    "pitfalls": "客户端重连无退避导致雪崩；服务端未就绪就接受请求；限流策略过于激进。"
+  },
+  {
+    "subject": "消息队列使用场景与权衡",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"消息队列\",\"异步\",\"一致性\",\"延迟\",\"运维\"]",
+    "principles": "使用MQ需考虑三个核心问题：1）一致性：消息发送成功不代表处理成功，需消费幂等和失败重试；2）延迟：MQ天然有积压风险，秒级响应场景可能不适用；3）运维成本：Kafka等中间件需要监控、堆积告警、扩容等配套。替代方案包括线程池+队列（适合单体，但可靠性差）、数据库轮询（如XXL-JOB，实时性差）、Redis list轻量队列（需自行处理高可用和持久化）。选择MQ本质是在可靠性、复杂度和性能之间权衡，小流量低频调用不宜直接上Kafka。",
+    "pitfalls": "常见错误：1）认为MQ能解决所有异步问题，忽略延迟和运维成本；2）未做消费幂等导致数据不一致；3）小流量场景盲目引入Kafka增加复杂度。"
+  },
+  {
+    "subject": "服务器配置选型（4C8G vs 8C16G）",
+    "category": "后端场景题",
+    "difficulty": "简单",
+    "tags": "[\"服务器选型\",\"CPU密集型\",\"内存密集型\",\"JVM\",\"压测\"]",
+    "principles": "服务器选型需结合业务场景：CPU密集型任务（实时计算、数据编码、批量处理）选8C16G，多核优势明显；内存密集型（Spring Cloud微服务、大量缓存）选4C8G，资源利用率更均衡。JVM参数配置关键：G1 GC建议堆外留2-3G，8G机器最多给5-6G堆，16G可给10G以上，大堆场景Full GC频率更低。必须压测验证：CPU使用率常超70%需更多核心，老年代增长太快需升内存。简单原则：业务轻、并发低、成本敏感选4C8G；高并发、大数据处理选8C16G。",
+    "pitfalls": "常见错误：1）盲目上大配置导致资源浪费和调度效率低；2）未压测直接选型；3）忽略JVM参数与硬件配置的匹配。"
+  },
+  {
+    "subject": "Java Agent死循环问题及解决方案",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"Java Agent\",\"字节码增强\",\"死循环\",\"ASM\",\"APM\"]",
+    "principles": "Agent死循环通常发生在字节码增强逻辑中，如ClassFileTransformer处理类时触发新的类加载或transform，形成递归调用。常见于使用ASM、CGLIB、Javassist等框架。解决方案：1）加类名过滤，排除不必要的类（如agent自身包路径）；2）使用ThreadLocal标记当前是否在transform流程中，直接跳过。示例代码：static final ThreadLocal<Boolean> transforming = new ThreadLocal<>(); 在transform方法中检查并设置标记。SkyWalking、Pinpoint等APM工具都有类似guard机制。",
+    "pitfalls": "常见错误：1）未过滤agent自身类导致递归；2）忽略间接类加载；3）未使用ThreadLocal标记导致重入。"
+  },
+  {
+    "subject": "GPU集群LLM并发性能分析",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"LLM\",\"GPU\",\"并发\",\"动态批处理\",\"KV Cache\",\"PagedAttention\"]",
+    "principles": "大模型服务采用动态批处理（Dynamic Batching），多个用户请求合并成batch处理，不简单按请求数均分。关键点：1）prefill阶段可批量处理prompt，吞吐接近峰值；2）decode阶段逐token生成，长文本和高采样参数会拖慢速度；3）真正瓶颈是显存带宽和KV Cache管理，每个并发请求需保留KV Cache，1000并发可能OOM。例如A100 80GB跑Llama3-8B，每个请求平均2GB KV Cache，最多40并发。优化方向：PagedAttention降低显存压力、连续批处理、控制最大生成长度。",
+    "pitfalls": "常见错误：1）认为并发数直接线性降低每个用户的速度；2）忽略KV Cache显存瓶颈；3）未考虑prefill和decode阶段的差异。"
+  },
+  {
+    "subject": "JWT安全性保障措施",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"JWT\",\"安全\",\"Token\",\"HTTPS\",\"刷新Token\",\"黑名单\"]",
+    "principles": "JWT无状态，一旦签发无法直接失效，需外围机制配合：1）HTTPS加密传输；2）合理控制过期时间（15分钟到2小时），结合刷新Token（服务端可随时废掉）；3）关键操作（改密码、删账号）需二次认证；4）引入Redis黑名单记录已注销Token或用户ID，每次请求校验；5）payload不放敏感信息，签名算法用HS256或RS256。JWT安全是组合拳：短过期、HTTPS、刷新机制、敏感操作加固、必要时Redis控制生命周期。",
+    "pitfalls": "常见错误：1）Token过期时间设置过长（如7天）；2）payload存放敏感信息；3）未使用HTTPS；4）依赖JWT自身实现失效机制。"
+  },
+  {
+    "subject": "CDN流量异常突增排查与解决",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"CDN\",\"流量异常\",\"盗链\",\"爬虫\",\"限速\",\"Token鉴权\"]",
+    "principles": "CDN流量突增可能原因：真实用户传播、恶意爬虫批量拉取、盗链（其他网站嵌入CDN地址）。排查第一步看访问日志：User-Agent、Referer、IP分布。解决方案：1）盗链：CDN侧配置Referer白名单；2）加Token鉴权，下载链接带时效性签名；3）对高频IP限速或拦截（如单IP每秒超10次返回403）；4）热点资源挪到独立二级域名，与主站流量隔离。",
+    "pitfalls": "常见错误：1）未区分真实用户和异常流量直接限流；2）忽略Referer和User-Agent分析；3）未做Token鉴权导致链接被长期滥用。"
+  },
+  {
+    "subject": "接口恶意刷流量防御策略",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"限流\",\"风控\",\"Sentinel\",\"布隆过滤器\",\"分层防御\"]",
+    "principles": "恶意刷流量防御需分层：1）限流：Redis+Lua分布式令牌桶（单用户每秒最多5请求），Nginx层limit_req模块前置拦截；2）风控规则：基于IP、设备指纹、用户Token频次统计，Sentinel热点参数限流自动拦截异常参数；3）行为分析：滑动窗口计算请求熵值或机器学习模型判断真人操作；4）底层存储防穿透：布隆过滤器挡非法key查询，Redis缓存设空值过期时间。关键：网络层、应用层、数据层都有对应策略。",
+    "pitfalls": "常见错误：1）仅依赖单一限流手段；2）未考虑恶意请求查不存在的数据导致数据库穿透；3）忽略行为分析，误伤真实用户。"
+  },
+  {
+    "subject": "多数据库适配实现方案",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"多数据库\",\"ORM\",\"MyBatis\",\"Hibernate\",\"抽象隔离\"]",
+    "principles": "多数据库适配需抽象隔离和分层设计：1）ORM框架：MyBatis用<databaseId>标签做方言适配，不同数据库执行不同SQL片段；Hibernate通过Dialect自动处理底层差异，写HQL即可。2）原生SQL场景：自行封装一层，定义统一数据访问接口，内部根据数据库类型路由到具体实现。3）数据库差异包括语法、函数、数据类型等，硬编码不可维护。",
+    "pitfalls": "常见错误：1）硬编码SQL导致后期维护困难；2）未考虑不同数据库的事务隔离级别差异；3）忽略ORM框架的性能开销。"
+  },
+  {
+    "subject": "多数据库适配方案",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"ORM\",\"MyBatis\",\"Hibernate\",\"数据库适配\"]",
+    "principles": "通过抽象隔离和分层设计适配多种数据库。常用方法包括：1）使用ORM框架如MyBatis的<databaseId>标签或Hibernate的Dialect自动处理差异；2）封装统一数据访问接口，各数据库实现各自的SQL构造器（如MySQLImpl、OracleImpl实现SqlBuilder接口），运行时通过Spring @Profile或工厂模式加载；3）连接池和驱动可插拔，如HikariCP配合动态切换数据源。",
+    "pitfalls": "硬编码SQL导致维护困难；忽略分页等语法差异（如MySQL用LIMIT，Oracle用ROWNUM）；未考虑连接池和驱动的动态切换。"
+  },
+  {
+    "subject": "性能优化非代码层面",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"性能优化\",\"网络传输\",\"数据库\",\"缓存\",\"异步化\",\"JVM\"]",
+    "principles": "性能优化需从系统、架构、资源调度多层面入手：1）网络传输：使用Protobuf替代JSON减少数据体积，CDN加速静态资源；2）数据库：合理使用索引（InnoDB聚簇索引），分库分表（ShardingSphere/MyCat）解决单库瓶颈；3）缓存：Redis处理热点数据（防雪崩、穿透、击穿），本地缓存Caffeine用于不变配置；4）异步化：消息队列（Kafka）扛突发流量，线程池参数需结合业务TP99调整；5）JVM：监控Young GC频率和Old Gen增长，用MAT分析内存泄漏。",
+    "pitfalls": "只关注代码优化而忽略网络、数据库、缓存等层面；缓存使用不当导致雪崩或穿透；异步化未合理配置线程池导致服务拖垮。"
+  },
+  {
+    "subject": "系统上线关键监控指标",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"监控\",\"错误率\",\"延迟\",\"吞吐量\",\"JVM\",\"业务指标\"]",
+    "principles": "上线后需关注三类关键指标：1）错误率：HTTP 5xx或RPC调用失败超过1%需警惕，如Feign调用熔断或超时；2）延迟：关注P99和P95而非平均值，用SkyWalking或Prometheus+Grafana定位慢请求；3）吞吐量：QPS与压测基线对比，检查线程池和数据库连接，Kafka消费者组lag突增表示消息积压。JVM层面监控Full GC频率和Young GC突增，用Arthas分析堆栈。业务指标联动，如支付成功率下降需加降级策略。",
+    "pitfalls": "只盯平均值忽略P99；未联动业务指标导致技术问题影响业务；JVM监控不到位遗漏内存泄漏。"
+  },
+  {
+    "subject": "OAuth2.0授权服务设计与Token管理",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"OAuth2.0\",\"JWT\",\"Token管理\",\"Spring Security\"]",
+    "principles": "核心是四种角色（资源所有者、客户端、授权服务、资源服务）的协作。授权码模式最常用：用户登录授权后获取临时authorization_code，客户端用code+client_secret换取access_token。Token管理可选JWT（无状态，但无法主动失效，需配合Redis黑名单）或自管理token（可随时删除，但每次请求查存储，1k QPS可能成瓶颈）。Spring Security OAuth2或Spring Authorization Server提供骨架，生产需加client_id/secret安全管理、token加密存储、速率限制。刷新token机制避免频繁登录，全程需HTTPS。",
+    "pitfalls": "忽略刷新token机制；未使用HTTPS导致安全风险；自管理token未考虑性能瓶颈。"
+  },
+  {
+    "subject": "防止注册功能恶意攻击",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"安全\",\"限流\",\"设备指纹\",\"人机验证\",\"风控\"]",
+    "principles": "组合拳防御：1）IP限流（同一IP短时间超5次拦截），但需结合设备指纹（前端SDK收集设备ID、浏览器特征等）；2）人机验证（CAPTCHA如滑动拼图）；3）Redis记录设备ID+手机号双重校验（如5分钟内不允许再发）；4）用户行为异常监控（页面停留时间低于2秒提交验证码）。设备指纹、行为识别、人机挑战三者配合，让恶意请求不经过业务逻辑。",
+    "pitfalls": "仅依赖IP限流无法应对代理IP；未接入设备指纹导致攻击者绕过；忽略行为分析导致误判。"
+  },
+  {
+    "subject": "在线DDL添加字段不影响读写",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"MySQL\",\"Online DDL\",\"gh-ost\",\"数据库变更\"]",
+    "principles": "减少锁表时间。MySQL 5.6+支持ALGORITHM=INPLACE, LOCK=NONE的DDL，新增非空有默认值字段可走inplace不重建表，但仍可能短暂加MDL锁。稳妥做法是用工具如pt-online-schema-change或gh-ost：创建影子表加字段，逐步同步数据，最后原子替换，原表可读可写。小表可直接Online DDL，大表或核心业务表建议用gh-ost，并提前在测试环境压测。",
+    "pitfalls": "忽略MDL锁导致短暂阻塞；大表直接ALTER导致长时间锁表；未在测试环境验证影响。"
+  },
+  {
+    "subject": "快速定位时间窗口内重复登录",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"数据结构\",\"滑动窗口\",\"Redis\",\"算法\"]",
+    "principles": "使用滑动时间窗口+双端队列：每个QQ号维护一个Deque存储最近登录时间戳，新登录时先移除超过5分钟的旧记录，检查队列是否还有元素（有则重复），再将新时间加入队尾。时间复杂度O(1)，空间可控。大数据量可用Redis Sorted Set，以QQ号为member、时间戳为score，用ZREMRANGEBYSCORE清理过期记录，ZCOUNT判断区间内数量。",
+    "pitfalls": "使用HashMap无清理机制导致内存无限增长；未考虑时间窗口的滑动处理。"
+  },
+  {
+    "subject": "降低海外数据传输延迟",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"网络优化\",\"QUIC\",\"CDN\",\"异步化\",\"缓存\"]",
+    "principles": "分层优化：1）应用层聚合与压缩（如Kafka批量发送+ Gzip）；2）传输层选QUIC协议（基于UDP，快速建连，抗丢包）；3）部署边缘节点或中继服务（如Nginx/Envoy在海外就近转发）；4）异步化+最终一致性（消息队列如RabbitMQ/RocketMQ本地落盘后异步推送）；5）缓存热点数据（海外前置Redis/Memcached减少回源）。",
+    "pitfalls": "仅优化单层忽略整体；未考虑异步化导致数据不一致；QUIC协议兼容性问题。"
+  },
+  {
+    "subject": "从登录登出日志求最大在线人数及持续时间",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"算法\",\"区间叠加\",\"事件驱动\"]",
+    "principles": "将每个用户的登录和登出拆分为事件点（登录+1，登出-1），按时间排序（时间相同先登出后登录），然后扫描事件流，用计数器模拟实时在线人数，记录最大值及其连续持续时间。时间复杂度O(n log n)，空间O(n)。",
+    "pitfalls": "容易忽略时间相同时先处理登出再处理登录，否则同一秒内进出会导致计数错误；忘记记录最大值的连续持续时间，只记录了峰值。"
+  },
+  {
+    "subject": "主线程收集线程池并行任务结果的方法",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"多线程\",\"Future\",\"CompletableFuture\",\"ExecutorCompletionService\"]",
+    "principles": "使用ExecutorService.submit()提交Callable任务，返回Future对象。遍历Future调用get()阻塞获取结果，但串行get()效率低。优化方案：ExecutorCompletionService按完成顺序获取结果；CompletableFuture.allOf()实现异步编排。",
+    "pitfalls": "直接循环get()会导致前一个任务阻塞后续任务；忽略异常处理导致线程卡死；未考虑任务取消或超时。"
+  },
+  {
+    "subject": "Linux命令行执行完整流程",
+    "category": "后端场景题",
+    "difficulty": "简单",
+    "tags": "[\"操作系统\",\"Shell\",\"系统调用\"]",
+    "principles": "Shell解析命令（分词、查找PATH）、fork()创建子进程、execve()加载可执行文件（ELF）、内核设置虚拟内存和文件描述符、程序运行（如通过getdents()读目录）、进程退出（_exit()）后父进程通过wait()获取退出码。",
+    "pitfalls": "忽略环境变量PATH查找过程；混淆fork和exec的作用；忘记标准输入输出继承自父进程。"
+  },
+  {
+    "subject": "数据库设计：关联表与冗余字段的权衡",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"数据库设计\",\"范式\",\"反范式\",\"一致性\",\"性能\"]",
+    "principles": "关联表（正范式）保证数据一致性，适合频繁变更场景，但查询需JOIN，性能下降；冗余字段（反范式）减少JOIN，提升读性能，但更新冗余数据复杂，可能引入不一致。实际业务中如订单快照冗余用于记录历史状态。",
+    "pitfalls": "过度使用冗余字段导致数据不一致；忽略关联表索引导致JOIN性能差；未考虑冗余字段的同步机制（如MQ或binlog）。"
+  },
+  {
+    "subject": "分布式支付服务限流设计（FIFO且用满第三方容量）",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"系统设计\",\"限流\",\"消息队列\",\"分布式\",\"FIFO\"]",
+    "principles": "引入消息队列（如Kafka）做缓冲，保证FIFO（单分区内有序）；后端Worker消费时通过Redis令牌桶统一控速（100/s），确保不超限且用满容量；Worker需幂等处理，队列持久化防丢单；监控积压和速率。",
+    "pitfalls": "多个Worker各自限流导致总量超限；未使用滑动窗口导致速率毛刺；忽略消息重复或丢失；未考虑第三方限流动态变化。"
+  },
+  {
+    "subject": "MySQL亿级表快速加索引方案",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"MySQL\",\"索引\",\"在线DDL\",\"gh-ost\"]",
+    "principles": "避免直接ALTER TABLE导致锁表。使用pt-online-schema-change或gh-ost工具，通过影子表+binlog同步实现在线加索引，对业务影响小。也可手动模拟：建新表、加索引、导数据、双写同步、切换。",
+    "pitfalls": "直接在生产库执行ALTER TABLE导致长时间锁表；一次性加过多索引影响写入性能；未在测试环境演练。"
+  },
+  {
+    "subject": "电商订单数据同步到数仓方案",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"数据同步\",\"binlog\",\"Kafka\",\"Flink\",\"数仓\"]",
+    "principles": "使用binlog（Canal/Debezium）捕获MySQL变更，发送到Kafka做缓冲削峰；Flink消费Kafka数据，支持exactly-once语义，进行去重、合并更新后写入Hive/ClickHouse等数仓。保证最终一致性和高吞吐。",
+    "pitfalls": "忽略binlog的格式选择（ROW模式）；未处理数据乱序或延迟；未考虑数仓侧的分区策略导致查询性能差；缺少监控和告警。"
+  },
+  {
+    "subject": "基于 binlog 和消息队列的实时数据同步方案",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"binlog\",\"消息队列\",\"Canal\",\"Kafka\",\"Flink\",\"数据同步\"]",
+    "principles": "优先使用 binlog + 消息队列方案。MySQL binlog 记录所有变更，通过 Canal 或 Debezium 捕获并发送到 Kafka，实现异步处理、削峰填谷。数仓侧用 Flink 消费 Kafka 数据，支持 exactly-once 语义，去重合并后写入 Hive、ClickHouse 或 Iceberg。每天跑一次离线对账任务作为兜底校验。",
+    "pitfalls": "不要用定时全量拉取，性能差且易压垮数据库；不要让业务代码直接发消息，事务未提交时发送易丢数据。"
+  },
+  {
+    "subject": "高可用数据同步系统的容错机制",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"高可用\",\"容错\",\"断点续传\",\"死信队列\",\"对账\"]",
+    "principles": "1）数据传输链路支持断点续传，binlog offset 与变更原子持久化；2）网络抖动时用消息队列缓冲，下游故障不丢数据；3）写入失败用指数退避重试+死信队列；4）双向同步需打标记防循环复制；5）定期对账补数作为最终防线。",
+    "pitfalls": "简单重试可能压垮下游，必须用退避策略；环形同步无标记会导致数据无限循环。"
+  },
+  {
+    "subject": "游标分页解决 LIMIT OFFSET 数据丢失问题",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"分页\",\"数据同步\",\"游标\",\"一致性\"]",
+    "principles": "LIMIT OFFSET 在并发写入时因物理顺序变动导致数据重复或丢失。推荐游标分页：基于上次查询的最后一条记录（如时间戳+主键）作为下次起点，保证每条数据只遍历一次。要求排序字段单调且唯一。",
+    "pitfalls": "不要依赖 OFFSET 做数据同步；游标分页需确保排序字段组合唯一，否则仍可能错乱。"
+  },
+  {
+    "subject": "数据同步 OOM 的排查与解决",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"OOM\",\"内存溢出\",\"数据同步\",\"流式处理\"]",
+    "principles": "OOM 常见原因是一次加载过多数据到内存。排查用 jmap/jstat 看老年代，jstack 看线程卡点。解决：1）控制批次大小（如几千条）；2）流式处理（ResultSet fetchSize、游标遍历）；3）磁盘缓冲（MapDB/RocksDB）。避免全量加载到 List 再处理。",
+    "pitfalls": "Kafka 消费者一次拉取过多消息不提交也会堆积；JSON 序列化临时对象会加剧内存压力。"
+  },
+  {
+    "subject": "双十一消息堆积的应对策略",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"消息堆积\",\"扩容\",\"降级\",\"削峰\",\"幂等\"]",
+    "principles": "核心从扩容、降级、削峰三层面应对：1）横向扩容消费者（需提前规划分区数）；2）降级非核心数据同步，延迟处理；3）源头限流（Sentinel）或写请求异步化。消费端必须幂等，监控告警自动触发预案。",
+    "pitfalls": "线上改分区有风险，大促前需规划好；消费重试需幂等判断，避免重复消费。"
+  },
+  {
+    "subject": "消息队列中订单状态更新顺序错乱的解决",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"消息顺序\",\"分区键\",\"Kafka\",\"RocketMQ\",\"局部有序\"]",
+    "principles": "消息队列默认不保证全局有序，只保证单分区内有序。解决：发送端按订单 ID 作为 key 路由到同一分区；消费端单线程处理同一订单消息。Kafka 通过 key 哈希到固定分区，RocketMQ 类似。多个订单间强时序需引入版本号或时间戳缓冲，但成本高。",
+    "pitfalls": "不要追求全局有序，成本太高；分区键选择不当会导致负载不均。"
+  },
+  {
+    "subject": "数据同步任务中途失败的一致性保证",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"一致性\",\"幂等\",\"断点续传\",\"checkpoint\",\"事务\"]",
+    "principles": "核心是幂等+状态追踪。任务进度写入外部存储（如 checkpoint 表或 Redis），包含 source_position、target_offset、时间戳和状态。重启时根据状态决定从头跑还是断点续传。不同场景（单表同步、CDC 增量）策略不同。",
+    "pitfalls": "不能仅靠重试保证一致性；状态存储需支持原子更新，避免重复执行。"
+  },
+  {
+    "subject": "binlog CDC 同步系统的设计要点",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"binlog\",\"CDC\",\"Canal\",\"Flink CDC\",\"网络隔离\",\"DDL\"]",
+    "principles": "MySQL binlog 设为 ROW 模式，同步服务伪装成从库拉取。事件经 Kafka 解耦削峰，按表或业务域分区。数仓端用 Flink 做 checkpoint 实现 exactly-once。注意：网络隔离（同内网）、DDL 处理（statement 格式解析复杂）、初始快照用快照读避免锁表。",
+    "pitfalls": "DDL 变更容易导致解析失败；初始全量同步不能直接扫表，需用快照读+binlog 续接。"
+  },
+  {
+    "subject": "数据同步任务失败时保证一致性的策略",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"数据同步\",\"一致性\",\"幂等\",\"CDC\"]",
+    "principles": "核心思路是幂等+状态追踪。每次任务启动前检查上次执行状态（如checkpoint表或Redis），记录source_position、target_offset、时间戳和状态字段，重启时决定从头跑还是断点续传。目标端写入必须幂等，如按主键upsert、merge into或ON DUPLICATE KEY UPDATE。批量同步时拆成小批次独立事务提交，失败最多丢一批。强一致性场景可加校验任务对比checksum自动修复。最终一致性方案最实用。",
+    "pitfalls": "依赖重试而非设计上的幂等和状态追踪；一次性提交大量数据导致失败后恢复困难；忽略目标端写入的幂等性导致重复数据；强一致性方案代价过高不适用于非金融场景。"
+  },
+  {
+    "subject": "API网关实现接口版本管理的方法",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"API网关\",\"版本管理\",\"路由\",\"灰度发布\"]",
+    "principles": "本质是路由分流，将不同版本请求精准打到对应后端服务。三种常见方式：路径路由（如/api/v1/users）、Header路由（如Accept-Version: v2）、域名路由（如v1.api.example.com）。Spring Cloud Gateway可用Predicate实现路径匹配。灰度发布时可结合权重和注册中心元数据做条件路由。版本多时需统一文档聚合。",
+    "pitfalls": "仅使用路径路由导致URL暴露版本信息；忽略Header路由的客户端透明性；版本隔离不彻底导致新旧版本互相影响；未考虑灰度发布的流量权重控制。"
+  },
+  {
+    "subject": "网关层防止接口重放攻击的方法",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"API网关\",\"安全\",\"重放攻击\",\"Nonce\"]",
+    "principles": "核心是时间戳+唯一令牌（Nonce）组合。客户端请求带时间戳和一次性随机串，网关先校验时间戳是否在允许窗口内（如5分钟），超出拒绝。然后检查Nonce是否已处理，用Redis记录已处理Nonce并设置过期时间。通过分布式原子写实现去重校验，整个过程不经过业务系统。",
+    "pitfalls": "Nonce生成不够随机导致碰撞；时间窗口设置不合理（过长或过短）；Redis单点故障影响去重校验；未考虑分布式环境下的原子性操作。"
+  },
+  {
+    "subject": "配置中心挂掉时微服务的降级策略",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"配置中心\",\"高可用\",\"降级\",\"本地缓存\"]",
+    "principles": "核心是本地缓存+默认值+熔断三件套。启动时拉取配置到本地文件（如config-cache.json），运行时内存+定时刷新，每30秒轮询一次。加兜底开关，如@Value(\"${xx:default}\")写默认值。极端情况做熔断式降级，如Hystrix或Sentinel拦住配置获取请求，失败超阈值返回缓存或静态策略。",
+    "pitfalls": "仅依赖远程配置无本地缓存；未设置默认值导致空指针；轮询间隔过长或过短；熔断阈值设置不合理导致雪崩。"
+  },
+  {
+    "subject": "分布式事务补偿机制的设计与失败处理",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"分布式事务\",\"补偿\",\"幂等\",\"最终一致性\"]",
+    "principles": "核心是幂等性和状态机兜底。每步操作记录全局事务ID和分支状态，补偿前先查当前状态，只有已提交未补偿才执行。补偿逻辑异步重试，用消息队列+延迟重试（如RocketMQ事务消息），最多3次，失败进入人工干预队列。系统预留对账和修复入口，每天定时跑对账任务。补偿链不宜过长，超过5个服务拆成短事务。",
+    "pitfalls": "补偿逻辑无状态检查导致重复扣款；重试死循环无上限；补偿链过长导致一环失败整链卡住；忽略人工干预和监控日志。"
+  },
+  {
+    "subject": "分布式缓存中一致性Hash算法的实现与优势",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"分布式缓存\",\"一致性Hash\",\"扩容\",\"虚拟节点\"]",
+    "principles": "将节点和key映射到0~2^32-1环形空间，对key哈希后顺时针找到第一个大于等于该哈希值的节点。增删节点只影响相邻一小段区间。引入虚拟节点避免数据倾斜，每个物理节点生成多个虚拟节点分散位置。相比普通Hash（hash(key)%N），节点变化时只有部分key需重定位，系统扩缩容平滑过渡。",
+    "pitfalls": "虚拟节点数量设置不当导致分布不均；未考虑节点故障时的数据迁移；与普通Hash混淆，忽略扩容时的缓存雪崩风险；实际应用如Redis Cluster的槽位分片与一致性Hash的区别。"
+  },
+  {
+    "subject": "灰度发布中保证新旧版本数据一致性的方法",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"灰度发布\",\"数据一致性\",\"数据库变更\",\"双写\"]",
+    "principles": "核心是数据结构演进对读写流量透明，分阶段控制。先做写兼容，新版本加字段时提前在旧版本预留。读写分离过渡，用中间件分流写请求。双写迁移阶段，新旧版本同时写两套结构，异步比对补差。数据库变更走低风险方案，如Online DDL加索引，改列类型先加新列再双写。DAO层抽象出版本适配器，不同版本走不同映射逻辑。",
+    "pitfalls": "新版本直接修改数据库结构导致旧版本崩溃；未做双写迁移导致数据丢失；忽略监控和熔断兜底导致脏数据扩散；灰度比例调整过快引发问题。"
+  },
+  {
+    "subject": "单点登录系统的设计与实现",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"SSO\",\"OAuth2\",\"JWT\",\"认证\"]",
+    "principles": "本质是身份信息的跨系统共享。基于中心化认证服务，如OAuth2+JWT。用户首次访问子系统A，未登录则跳转到SSO Server，登录后生成全局Token（如JWT），存Cookie或前端存储。后续访问子系统B时，B检查本地Token，无效则跳SSO Server验证，Server发现已登录直接签发新Token给B。各子系统信任SSO Server签名，只校验不处理密码。",
+    "pitfalls": "Token过期时间设置不合理导致频繁登录或安全风险；未考虑跨域Cookie共享问题；各子系统不信任SSO Server签名导致重复认证；忽略单点注销的实现。"
+  },
+  {
+    "subject": "SSO Token-Based Authentication and Token Verification",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"SSO\",\"JWT\",\"Token\",\"Authentication\"]",
+    "principles": "SSO Server generates a global token (e.g., JWT) after successful login, redirects back to the original system. The token can be stored in a cookie (under the main domain) or frontend storage. Subsequent access to subsystem B checks for a valid token locally; if missing, redirects to SSO Server for verification. If the user is already logged in, SSO Server directly issues a new token to B, achieving seamless login. The entire process relies on a single browser redirect for identity synchronization. Key points: SSO Server is responsible for authentication and token issuance; subsystems trust SSO Server's signature, only verify, not handle passwords; token expiration should be set reasonably, generally slightly longer than the session.",
+    "pitfalls": "Common mistakes include not using HTTPS for token transmission, leading to token leakage; failing to broadcast session cleanup to all subsystems on active logout; relying on the SSO Server for real-time verification on every request, causing downtime issues; setting token expiration too short, causing frequent re-authentication; or too long, increasing security risks."
+  },
+  {
+    "subject": "SSO High Availability and Failover Strategies",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"SSO\",\"High Availability\",\"Failover\",\"JWT\",\"Redis\"]",
+    "principles": "If the SSO authentication center goes down, the key is to ensure logged-in users are not affected. Session state should not rely entirely on real-time verification from the authentication center. Solutions: 1) Use signed tokens like JWT that can be verified locally without contacting the authentication center. 2) Cache user credential information locally, e.g., store session mappings in Redis with TTL matching token expiration. 3) Ensure high availability for the authentication center itself, using clustering and master-slave failover (e.g., Keepalived VIP, Kubernetes readiness probes). Also ensure database high availability. Online verification only occurs during login and token refresh; daily access relies on self-contained tokens and local verification.",
+    "pitfalls": "Common pitfalls include assuming the authentication center must be available for every request; not implementing local token validation; failing to set appropriate cache TTLs; neglecting database high availability; not testing failover scenarios thoroughly."
+  },
+  {
+    "subject": "API Signature Verification and Replay Attack Prevention",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"API Security\",\"Signature\",\"Replay Attack\",\"HMAC\",\"Nonce\"]",
+    "principles": "API signature verification and anti-replay mechanisms solve data integrity and request timeliness. 1) Signature ensures parameters are not tampered with: client concatenates all request parameters in dictionary order, adds secretKey, generates signature using HmacSHA256 or MD5, and sends it in header or parameters. Server recalculates and rejects if mismatch. secretKey must never be transmitted over the network; typically distributed via accessKey/secretKey pair offline. 2) Anti-replay uses timestamp + nonce: each request includes timestamp and unique nonce; server checks timestamp deviation (e.g., within 5 minutes) and stores nonce in Redis for deduplication with TTL of 5 minutes. Duplicate nonce within the window indicates replay attack. 3) Typical flow used by Alipay, WeChat Pay APIs. Redis deduplication should use setNx with expiration to ensure atomicity. For high QPS, consider Bloom filter for local nonce caching, but be aware of false positives and state synchronization.",
+    "pitfalls": "Common mistakes include using MD5 without HMAC; transmitting secretKey over network; not sorting parameters consistently; using setEx instead of setNx for nonce deduplication; setting timestamp window too wide; not handling clock skew between client and server."
+  },
+  {
+    "subject": "Sensitive Data Encryption in Transmission and Storage",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"Sensitive Data\",\"Encryption\",\"HTTPS\",\"AES\",\"Data Masking\"]",
+    "principles": "Sensitive data (e.g., ID numbers, phone numbers) must be protected end-to-end. 1) Transmission: HTTPS is mandatory; TLS encryption prevents man-in-the-middle eavesdropping. 2) Storage: Do not store sensitive fields in plaintext. Use encrypted storage (e.g., AES symmetric encryption with keys managed by KMS) or hashed storage (e.g., SHA-256 + salt) for comparison scenarios. 3) API responses: Apply logical masking, e.g., display phone as 138****1234. Backend should handle masking, not frontend. Use Jackson's @JsonSerialize with custom serializer. 4) Logging: Mask sensitive fields in logs using AOP interception. The full chain: HTTPS transmission → backend decryption → business processing → encrypt/hash before DB storage → decrypt/compare on query → mask before response → filter logs.",
+    "pitfalls": "Common mistakes include hardcoding encryption keys in application code; using weak encryption algorithms; not masking data in logs; relying solely on frontend masking; using ECB mode for AES; not rotating keys regularly; failing to encrypt data at rest in databases."
+  },
+  {
+    "subject": "Fuzzy Search on Encrypted Data",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"Encryption\",\"Fuzzy Search\",\"Deterministic Encryption\",\"Searchable Encryption\"]",
+    "principles": "Fuzzy search on encrypted data requires partial matching without decryption, which is inherently challenging. Standard encryption produces unpredictable ciphertext, making direct LIKE queries impossible. Common approaches: 1) Deterministic encryption: same plaintext + same key → same ciphertext, enabling prefix matching (e.g., '张%'). However, it leaks data patterns. 2) Searchable encryption: uses trapdoor functions to generate search tokens for encrypted indexes (e.g., CryptDB's multi-layer encryption). 3) Practical compromises: store hashed or encrypted copies of high-frequency search terms for indexing, or perform fuzzy search at the application layer after decryption. Some companies use Elasticsearch with Vault for field encryption, only encrypting exact-match fields. The trade-off is between security and usability; most systems downgrade protection for some fields to enable searchability.",
+    "pitfalls": "Common mistakes include assuming standard encryption supports LIKE queries; using deterministic encryption without understanding pattern leakage; not considering performance impact of application-layer decryption; ignoring the need for key management in searchable encryption schemes."
+  },
+  {
+    "subject": "API Abuse Prevention Beyond Rate Limiting",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"API Security\",\"Rate Limiting\",\"Anti-Abuse\",\"CAPTCHA\",\"Device Fingerprinting\"]",
+    "principles": "API abuse prevention requires multiple layers beyond basic rate limiting. 1) Rate limiting: e.g., Redis + Lua sliding window, max 10 requests per second per user. 2) Granular identity recognition: combine device fingerprint, User-Agent, token behavior patterns; use Redis for short-term behavior memory; blacklist abnormal devices. 3) CAPTCHA: trigger for high-risk operations (login, registration, order placement) after threshold is exceeded; use services like Geetest or Alibaba Cloud human verification. 4) Business logic anomaly detection: e.g., a user clicking submit 5 times in 1 second with millisecond precision is likely a bot; mark as suspicious or delay response. 5) API signature anti-replay: timestamp + nonce to prevent request replay. 6) Frontend behavior tracking: collect mouse trajectories, click timing via JS and send to risk control system for model analysis.",
+    "pitfalls": "Common mistakes include relying solely on IP-based rate limiting (IPs can be spoofed); not using CAPTCHA for high-risk operations; ignoring device fingerprinting; not analyzing behavioral patterns; failing to implement signature-based anti-replay; not integrating frontend behavior data."
+  },
+  {
+    "subject": "Sliding CAPTCHA Design and Anti-Bot Measures",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"CAPTCHA\",\"Sliding Verification\",\"Anti-Bot\",\"Behavior Analysis\",\"Security\"]",
+    "principles": "Sliding CAPTCHA core: generate a background image with a random gap and a corresponding slider piece. Key points: 1) Frontend uses Canvas to draw an irregular gap (e.g., semicircle) and slider; gap shape must be random each time. 2) Record mouse movement trajectory during drag, including timestamps, coordinates, acceleration; submit all data to backend, not just final position. 3) Backend analyzes behavior: real users show hesitation, jitter, variable speed; bots often have uniform linear motion. Simple rules: fewer than 10 trajectory points → likely bot; average speed > 50px/100ms → suspicious; too smooth trajectory → non-human. 4) Add interference: background noise, distortion; slider edge blurring to prevent image recognition. 5) Each generated image binds a one-time token, stored in Redis with 5-minute TTL. 6) Risk control: same IP failing more than 5 times triggers secondary verification or ban. Frontend collects behavior data; backend makes comprehensive decisions. Services like Geetest and Tencent Cloud slider use similar approaches with ML models.",
+    "pitfalls": "Common mistakes include only checking final position without analyzing trajectory; using fixed gap templates; not using one-time tokens; ignoring behavior analysis; not implementing risk control for repeated failures; failing to add image interference."
+  },
+  {
+    "subject": "SMS Verification Code Abuse Prevention",
+    "category": "后端场景题",
+    "difficulty": "简单",
+    "tags": "[\"SMS\",\"Verification Code\",\"Rate Limiting\",\"Anti-Abuse\",\"Security\"]",
+    "principles": "Preventing SMS verification code abuse requires rate limiting and increasing attack cost. 1) Basic rate limiting at the API layer: use Redis to record IP + phone number request frequency; block same IP for 10 minutes if requests exceed 5 times in a short period. 2) Additional measures: implement CAPTCHA before sending SMS; use device fingerprinting to detect abnormal patterns; apply exponential backoff for repeated requests; monitor and blacklist suspicious phone numbers or IPs. 3) Business logic: limit the number of SMS sent per phone number per day (e.g., 10); require additional verification for high-frequency requests. 4) Use time-based one-time passwords (TOTP) as an alternative for sensitive operations.",
+    "pitfalls": "Common mistakes include not rate limiting by both IP and phone number; using too short or too long block durations; not implementing CAPTCHA before SMS sending; ignoring device fingerprinting; failing to monitor for abuse patterns; not setting daily limits."
+  },
+  {
+    "subject": "短信验证码防恶意轰炸",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"限流\",\"Redis\",\"验证码\",\"安全\"]",
+    "principles": "核心是限流和增加攻击成本。组合策略：1）接口层限流，如Redis记录IP+手机号请求频次，同IP短时间超5次封10分钟；2）前置验证，如图形验证码或滑块，阻挡自动化工具；3）手机号维度限制，如1分钟1次、1小时5次、1天10次，用Redis维护计数带TTL；4）行为分析，如新设备首次请求或频繁切换手机号触发风控。原子操作示例：increment key并设置过期时间，超阈值则拒绝。",
+    "pitfalls": "单点防御易被绕过，必须组合策略；仅依赖业务逻辑拦不住高频打码；忽略手机号维度限制会导致绕过IP限流；未使用原子操作可能导致计数竞态条件。"
+  },
+  {
+    "subject": "消息队列实现延迟任务",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"消息队列\",\"RabbitMQ\",\"RocketMQ\",\"延迟任务\"]",
+    "principles": "三种常见做法：1）RabbitMQ延迟消息+死信队列，设置TTL，过期后转发到死信交换机再路由到消费队列；2）RocketMQ原生延迟消息，支持18个延迟等级，通过setDelayTimeLevel指定；3）外接调度系统，如数据库+xxl-job定时扫描。核心是让消息在指定时间后才被消费。",
+    "pitfalls": "RabbitMQ TTL是最大等待时间，队列积压可能导致延迟不准；RocketMQ延迟等级有限，不适合任意时间精度；外接调度系统不是纯消息队列方案。"
+  },
+  {
+    "subject": "死信队列设计与处理机制",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"消息队列\",\"死信队列\",\"RabbitMQ\",\"容错\"]",
+    "principles": "死信队列用于处理消费失败的消息，常见死信原因：消费者显式拒收、消息过期、队列满溢、重试达上限。典型场景：订单超时异常处理、数据清洗格式错误隔离、防止恶意消息崩溃。设计要点：1）保留原始上下文；2）告警联动，如Prometheus+Alertmanager；3）定期清理已处理死信。处理机制：启动专用DLQ消费者，落库或发监控平台，人工介入或自动重试。",
+    "pitfalls": "死信队列本身不解决业务问题，需后续流程；忽略上下文丢失导致排查困难；无告警导致问题积压；未清理导致堆积。"
+  },
+  {
+    "subject": "设计HashMap",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"数据结构\",\"HashMap\",\"散列\",\"冲突处理\"]",
+    "principles": "核心解决散列均匀和冲突处理。结构：数组+链表+红黑树，链表长度超8且数组长度超64转红黑树。散列函数：二次扰动，如高16位与低16位异或。容量为2的幂，取模用位运算hash & (length-1)。负载因子默认0.75，初始化时指定容量避免频繁扩容。key必须不可变，自定义对象需重写hashCode和equals。put流程：计算hash和index，查找覆盖或插入，判断链表转树和扩容。",
+    "pitfalls": "自定义对象做key未重写hashCode和equals导致数据丢失；负载因子设置不当影响性能；容量非2的幂导致取模效率低；key可变导致hashCode变化。"
+  },
+  {
+    "subject": "设计线程池",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"线程池\",\"并发\",\"生产者-消费者\",\"资源控制\"]",
+    "principles": "核心是任务生命周期和资源控制。生产者-消费者模型：任务提交进阻塞队列。流程：1）核心线程处理；2）核心忙则进队列；3）队列满则开非核心线程；4）总线程达上限执行拒绝策略。拒绝策略：抛异常、丢任务、调用者处理、丢弃最老任务。队列选型：ArrayBlockingQueue有界防爆，LinkedBlockingQueue可能堆积。线上避免Executors工厂方法，如newFixedThreadPool用无界队列易撑爆堆。",
+    "pitfalls": "忽略拒绝策略导致任务丢失；队列容量设置不当导致内存溢出或性能下降；使用无界队列在高并发下撑爆堆；核心线程数设置不合理影响吞吐。"
+  },
+  {
+    "subject": "设计消息队列",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"消息队列\",\"高吞吐\",\"Kafka\",\"分布式\"]",
+    "principles": "核心职责：收、存、发。1）接收：多分区机制分散写入，Netty Reactor多线程模型避免IO阻塞；2）存储：内存缓存+WAL，mmap文件映射，异步批量落盘；3）消费：拉取模型配合offset机制，支持重试和回溯；4）不丢消息：副本同步如双写或Raft协议，至少两个节点落盘才返回；5）路由元信息：ZooKeeper或Nacos管理。代码核心：队列数组+原子指针，关键路径无锁化设计如RingBuffer或CAS。",
+    "pitfalls": "直接写数据库导致性能瓶颈；推送模型压垮消费者；忽略副本同步导致消息丢失；路由元信息单点故障。"
+  },
+  {
+    "subject": "设计RPC框架",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"RPC\",\"Netty\",\"服务发现\",\"动态代理\"]",
+    "principles": "本质是让远程调用像本地调用。关键点：1）服务暴露与发现：注册到ZooKeeper或Nacos，消费者缓存列表；2）动态代理：JDK动态代理或ByteBuddy生成代理对象，拦截调用；3）网络通信：Netty异步非阻塞，序列化选Protobuf、Hessian或JSON；4）请求唯一标识：原子递增ID放入ConcurrentMap，线程用CountDownLatch等待；5）容错与负载均衡：重试机制配合随机、轮询、一致性Hash，设超时时间。埋点监控如SkyWalking。",
+    "pitfalls": "忽略超时设置导致线程卡死；序列化选型不当影响性能；服务发现缓存未更新导致调用失败；未考虑熔断限流导致雪崩。"
+  },
+  {
+    "subject": "设计短链系统",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"短链\",\"URL映射\",\"哈希\",\"分布式\"]",
+    "principles": "本质是长URL到短字符串的映射。生成策略：1）哈希算法如MD5或MurmurHash，取前几位并处理冲突；2）自增ID编码为62进制；3）预生成短码池。存储：用Redis或数据库存储映射关系，支持反向查询。重定向：短码访问时302重定向到长URL。需考虑短码唯一性、过期时间、防攻击（如恶意生成）。",
+    "pitfalls": "哈希冲突未处理导致映射错误；短码生成性能瓶颈；未设过期时间导致存储膨胀；忽略安全防护导致被滥用。"
+  },
+  {
+    "subject": "异步RPC响应与请求匹配机制",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"RPC\",\"异步\",\"并发\",\"ConcurrentMap\"]",
+    "principles": "使用原子递增ID标记每个请求，将请求ID与等待线程存入ConcurrentMap。响应返回时通过ID找到对应线程，用CountDownLatch唤醒并返回结果。",
+    "pitfalls": "忘记处理超时或异常情况导致线程永久挂起；未使用ConcurrentHashMap导致并发问题；ID生成不唯一导致匹配错误。"
+  },
+  {
+    "subject": "短链系统设计",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"短链\",\"分布式ID\",\"缓存\",\"重定向\"]",
+    "principles": "使用Snowflake生成唯一ID并转为62进制短码（6-8位）。存储采用key-value结构，短码为主键，Redis缓存扛读压力，MySQL/TiDB持久化。跳转用302重定向，注意大小写统一。",
+    "pitfalls": "短码可遍历猜测；缓存与数据库双写不一致；未做限流防刷；大小写敏感导致匹配失败。"
+  },
+  {
+    "subject": "大HashMap扩容优化方案",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"HashMap\",\"扩容\",\"ConcurrentHashMap\",\"渐进式扩容\"]",
+    "principles": "1G HashMap扩容会导致全量rehash、CPU飙升、GC压力剧增。优化方案：参考ConcurrentHashMap分段扩容；采用Go map增量扩容（新旧表共存，逐步迁移）；使用堆外内存（Ehcache）或mmap减少JVM堆压力。",
+    "pitfalls": "直接使用HashMap存储大数据；忽略扩容对在线服务的影响；未考虑分布式缓存拆分。"
+  },
+  {
+    "subject": "订单超时取消功能设计",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"延迟消息\",\"死信队列\",\"幂等\",\"分布式锁\"]",
+    "principles": "使用RabbitMQ死信队列或RocketMQ延迟消息实现定时触发。Redis+Lua脚本适合低一致性场景。处理时加分布式锁，先判断状态再更新，保证幂等。",
+    "pitfalls": "轮询数据库；使用JDK Timer或ScheduledExecutorService做分布式定时任务；未处理重复消费导致重复关单。"
+  },
+  {
+    "subject": "分布式单例对象实现",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"分布式单例\",\"选主\",\"Redis锁\",\"ZooKeeper\"]",
+    "principles": "通过外部协调机制（Redis SET NX或ZooKeeper临时顺序节点+Watcher）选举主节点，主节点初始化单例服务，备节点等待。可使用Curator的LeaderLatch或LeaderSelector简化实现。",
+    "pitfalls": "误解为跨JVM共享对象实例；未处理主节点宕机后的重新选举；状态同步缺失。"
+  },
+  {
+    "subject": "海量数据插入HashMap的不可行性与替代方案",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"HashMap\",\"分布式存储\",\"一致性哈希\",\"MapReduce\"]",
+    "principles": "1000亿数据无法放入单机HashMap，应使用分布式存储（如Redis Cluster、Cassandra）通过一致性哈希分片。临时处理可用MapReduce模型分批处理。",
+    "pitfalls": "试图在单机内存中维护全量映射；忽略扩容和GC问题；未考虑分布式方案。"
+  },
+  {
+    "subject": "文件上传系统设计",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"文件上传\",\"分片\",\"断点续传\",\"对象存储\",\"秒传\"]",
+    "principles": "前端分片（如5MB）上传，后端存对象存储（MinIO/OSS），使用multipart upload合并。数据库存元信息（文件名、大小、路径、分片数、MD5）。MD5用于校验和秒传。断点续传通过查询已上传分片列表实现。",
+    "pitfalls": "直接写本地磁盘导致扩容困难；未做MD5校验；未限制文件类型和上传频率；未使用异步处理后续任务。"
+  },
+  {
+    "subject": "分布式ID发号器设计",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"分布式ID\",\"Snowflake\",\"号段模式\",\"UUID\"]",
+    "principles": "常用方案：数据库号段模式（分段预分配）、Snowflake算法（64位Long，含时间戳、机器ID、序列号）、UUID（但太长）。高级方案如Leaf支持混合模式，通过ZooKeeper/Etcd分配worker ID。",
+    "pitfalls": "Snowflake时钟回拨导致ID重复；UUID作为数据库主键效率低；号段模式未考虑高可用。"
+  },
+  {
+    "subject": "秒杀系统设计要点",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"秒杀\",\"高并发\",\"Redis\",\"Kafka\",\"库存扣减\"]",
+    "principles": "秒杀系统核心设计包括：1）前端拦截：同用户每秒只放行1次请求，多余返回503；2）Redis原子扣库存：key设为seckill:stock:{itemId}，使用DECR并判断非负；3）异步化：用户中签后写Kafka，消费端落订单到MySQL，峰值写入从10w+/s降到几千/s；4）缓存热点：商品详情、活动规则放Redis，页面静态化，CDN托管前端资源；5）避免超卖：Redis扣库存+消息队列异步下单绑定为逻辑单元，用Lua脚本保证原子性。压测需覆盖真实场景，如JMeter模拟5w并发抢100件商品，按3倍冗余设计容量。",
+    "pitfalls": "常见错误包括：前端按钮灰化后仍被绕过，未做后端校验；库存扣减和下单未绑定原子操作导致超卖；忽略全链路压测，上线后Redis或Kafka负载过高；容量设计不足，未考虑前端拦截90%以上请求。"
+  },
+  {
+    "subject": "JVM内存分析与OOM排查",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"JVM\",\"OOM\",\"内存分析\",\"jstat\",\"jmap\",\"MAT\"]",
+    "principles": "分析JVM内存占用步骤：1）用jstat -gc <pid>观察年轻代、老年代、元空间和GC执行情况，至少30秒判断频繁GC或内存增长；2）用jmap -heap <pid>查看堆内存详细配置和使用量，老年代使用率长期超70%需警惕OOM；3）怀疑对象泄漏时，用jmap -dump:format=b,file=heap.hprof <pid>抓取堆转储，用MAT分析Dominator Tree定位大对象。OOM后分析需加启动参数-XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/path/to/dumps自动生成dump，同时开启-XX:+PrintGCDetails -Xlog:gc*:file=gc.log记录GC日志回溯征兆。",
+    "pitfalls": "常见错误包括：未提前配置HeapDumpOnOutOfMemoryError导致OOM后无法分析；仅依赖jstat而不抓取dump；忽略GC日志回溯；误以为代码中主动触发GC能解决泄漏。"
+  },
+  {
+    "subject": "Redis内存溢出排查与解决方案",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"Redis\",\"内存溢出\",\"排查\",\"淘汰策略\"]",
+    "principles": "Redis内存溢出排查步骤：1）看现象：物理内存耗尽则写swap变慢，maxmemory限制则返回OOM command not allowed；2）查用量：info memory关注used_memory_rss和used_memory，mem_fragmentation_ratio>1.5可能有碎片；3）找大key：用redis-cli --bigkeys扫描超大hash、zset或list，检查过期时间未设的堆积key。解决方案分三层：紧急调大maxmemory或迁移实例；治本开启LFU/LRU淘汰策略如allkeys-lfu；长期优化数据结构拆分大key，加二级缓存如Caffeine，或迁移到Codis/Tendis分布式方案。",
+    "pitfalls": "常见错误包括：未区分物理内存和maxmemory限制；忽略内存碎片问题；未设置过期时间导致key堆积；直接调大maxmemory而不优化数据结构。"
+  },
+  {
+    "subject": "高并发场景下锁设计：两百万生产者一个消费者",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"锁\",\"高并发\",\"Kafka\",\"Disruptor\",\"无锁设计\"]",
+    "principles": "核心思路是避免锁竞争，通过无锁化和队列缓冲扛住压力。1）生产者端分片：按hash或轮询分散到多个独立队列，如Kafka的Partition或RocketMQ的MessageQueue；2）队列内部用无锁结构：如Disruptor的环形缓冲区或ConcurrentLinkedQueue基于CAS，性能远高于synchronized/ReentrantLock；3）消费者从所有队列拉数据：可单线程轮询或反应式模型，若消费速度跟不上需扩容消费者。破局点在于让锁不需要出现，而非设计锁。",
+    "pitfalls": "常见错误包括：直接设计一把锁让两百万生产者竞争；忽略队列分片导致单点瓶颈；未评估消费者消费能力导致队列堆积。"
+  },
+  {
+    "subject": "百万商户中快速查找最近5家商户",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"GeoHash\",\"空间索引\",\"Redis\",\"Elasticsearch\"]",
+    "principles": "采用'粗筛+精算'两步：1）用GeoHash将二维经纬度编码为一维字符串，通过前缀匹配缩小范围，如当前坐标wx4g0则优先查前缀wx4g的商户，过滤90%以上无效数据；2）在筛选后小范围内用球面距离公式（如Haversine）精确计算，排序取Top 5。Redis的GEOSEARCH命令原生支持：jedis.geosearch('merchants', new GeoCoordinate(116.4, 39.9), new GeoRadiusArgs().count(5).sortAscending())；更复杂场景可用PostGIS或Elasticsearch的geo_distance查询。",
+    "pitfalls": "常见错误包括：直接遍历全量数据计算距离；GeoHash精度选择不当导致过滤效果差；未考虑边界情况导致漏掉附近商户。"
+  },
+  {
+    "subject": "MySQL SELECT * 对内存的影响分析",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"MySQL\",\"内存\",\"流式查询\",\"JDBC\"]",
+    "principles": "MySQL查询结果默认流式返回，服务端不会一次性将所有结果塞入内存，内存压力可控。但客户端可能全量拉取：图形工具如MySQL Workbench默认将结果集全拉到本地内存；Java JDBC的Statement.executeQuery()默认全fetch到ResultSet，除非设置fetchSize(Integer.MIN_VALUE)启用游标模式流式读取。正确做法：计数用SELECT COUNT(*)，导数据用主键范围分页或WHERE id > ? LIMIT 10000分批，生产环境避免直接SELECT *。",
+    "pitfalls": "常见错误包括：误以为服务端内存飙升；在图形工具中直接执行SELECT *导致客户端内存溢出；未设置fetchSize导致程序内存爆炸。"
+  },
+  {
+    "subject": "API网关核心功能设计：动态路由与限流",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"API网关\",\"动态路由\",\"限流\",\"Nacos\",\"Redis\"]",
+    "principles": "API网关核心职责包括路由、鉴权、限流、监控。1）动态路由：路由规则从代码剥离，用Nacos或ZooKeeper存储路由表（如/user/**转发到user-service:8080），网关启动拉取配置并监听变更实时更新内存路由表，Spring Cloud Gateway的RouteDefinitionWriter可实现；2）限流：常用令牌桶算法，生产环境用Redis+Lua实现分布式限流，按用户ID或IP做key，每秒放100个令牌超限返回429，Sentinel和Hystrix内置限流策略；3）热更新：通过OpenAPI提供管理接口，配置推送到配置中心，网关监听变更后reload，无需重启。认证、日志等脏活累活在网关层兜住。",
+    "pitfalls": "常见错误包括：路由规则硬编码在代码中；限流使用单机版RateLimiter导致分布式下不准确；未实现热更新导致配置变更需重启服务。"
+  },
+  {
+    "subject": "微服务配置中心设计与实时通知",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"配置中心\",\"Nacos\",\"长轮询\",\"实时通知\"]",
+    "principles": "配置中心解决分布式配置统一管理，需支持启动拉取和运行时实时感知。1）配置存储：用ZooKeeper、etcd或Nacos，如Nacos用MySQL持久化，内存维护最新配置，读写分离扛高并发；2）启动拉取：服务启动时HTTP请求拉取全量配置；3）运行时更新：采用长轮询（long polling），客户端挂住请求几十秒，服务端有变更立即返回，无变更等快超时返回空，如Nacos客户端每30秒发一次长轮询，配置变更时推给所有挂着的客户端。",
+    "pitfalls": "常见错误包括：使用轮询导致延迟大且费资源；未考虑配置中心高可用导致单点故障；忽略配置变更的版本管理和回滚。"
+  },
+  {
+    "subject": "配置中心高并发下的长轮询机制",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"配置中心\",\"长轮询\",\"高并发\",\"Nacos\"]",
+    "principles": "配置中心在高并发场景下，服务启动时通过HTTP从配置中心拉取全量配置。运行时更新采用长轮询（long polling）机制，客户端挂住请求几十秒，服务端有变更立即返回，无变更则等待快超时再返回空。例如Nacos客户端每30秒发起一次长轮询，服务端hold住请求，配置变更时立即推送给所有挂着的客户端。客户端收到变更后自动刷新Bean或配置项，如Spring Cloud Config配合@RefreshScope注解实现不重启服务更新配置。整体链路为“集中存储+长轮询+本地缓存”，客户端本地缓存一份，即使配置中心宕机也能降级使用。",
+    "pitfalls": "常见错误是使用轮询方式，延迟大且浪费资源；或者忽略本地缓存降级策略，导致配置中心故障时服务不可用。面试陷阱可能问长轮询与WebSocket的区别，或长轮询连接数限制下的优化方案。"
+  },
+  {
+    "subject": "分布式事务Seata AT模式实现数据一致性",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"分布式事务\",\"Seata\",\"AT模式\",\"数据一致性\"]",
+    "principles": "在电商下单场景中，订单、库存、支付三个服务跨服务操作，需保证数据一致性。Seata的AT模式对业务侵入小，只需在方法上加@GlobalTransactional注解。Seata自动记录订单、库存、支付表的before/after image，生成回滚日志。如果支付调用失败，Seata根据日志反向补偿，回退订单和库存状态。AT模式适合快速落地，但性能不如TCC。",
+    "pitfalls": "常见错误是认为AT模式能完全替代业务补偿，忽略全局事务超时和隔离性问题。面试陷阱可能问AT模式与XA协议的区别，或AT模式在长事务下的性能瓶颈。"
+  },
+  {
+    "subject": "分布式事务可靠消息最终一致性方案",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"分布式事务\",\"可靠消息\",\"最终一致性\",\"RocketMQ\"]",
+    "principles": "对于要求最终一致性的场景，可采用可靠消息+最终一致性方案。下单成功后发送MQ消息给库存服务，库存消费成功再扣减，然后发送下一条消息给支付服务。每个步骤都落库状态，配合定时对账任务兜底。RocketMQ的事务消息支持half message和回调机制，保证消息不丢。该方案适合异步场景，开发成本较低。",
+    "pitfalls": "常见错误是忽略消息重复消费问题，或未设计对账补偿机制。面试陷阱可能问消息丢失或重复时如何保证最终一致性，以及事务消息的回调超时处理。"
+  },
+  {
+    "subject": "分布式事务TCC模式在高并发资金场景的应用",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"分布式事务\",\"TCC\",\"高并发\",\"资金场景\"]",
+    "principles": "在极端情况如网络超时，不确定支付是否成功时，不能直接回滚，需采用TCC模式。Try阶段预占库存和支付额度，Confirm真正扣减，Cancel释放资源。虽然需要编写三个方法，但控制力更强，适合高并发资金场景。TCC性能最好但开发成本高，需根据系统容忍度和复杂度选择。",
+    "pitfalls": "常见错误是Try阶段未考虑资源竞争，或Confirm/Cancel幂等性设计不足。面试陷阱可能问TCC空回滚和悬挂问题，以及如何保证Try和Cancel的幂等。"
+  },
+  {
+    "subject": "灰度发布系统设计：流量路由与动态策略管理",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"灰度发布\",\"流量路由\",\"配置中心\",\"网关\"]",
+    "principles": "灰度发布系统的核心目标是控制新版本暴露范围，最小风险验证功能正确性。关键在于流量路由和动态策略管理。流程包括：1）流量打标：根据IP、用户ID、设备指纹等提取特征生成稳定标签，如按用户ID取模决定灰度池。2）路由规则下发：用配置中心（如Nacos或Apollo）维护灰度规则，如5%用户流量切到v2。网关或负载均衡组件监听配置变化实时更新路由逻辑。3）网关/SDK执行分流：在API网关层统一拦截，如Spring Cloud Gateway写GlobalFilter解析请求标签，结合灰度比例决定转发到service-v1或v2。也可用Service Mesh的Istio VirtualService做权重分发。4）渐进式放量：从1%开始观察监控指标，手动或自动提升比例，配合CI/CD流水线支持一键回滚。",
+    "pitfalls": "常见错误是忽略上下游版本兼容性，导致v2调v1时协议不一致；或未在日志和链路追踪中带上版本标记，排查困难。面试陷阱可能问灰度发布与蓝绿部署的区别，或如何实现流量染色。"
+  },
+  {
+    "subject": "灰度发布流量打标与路由规则实现",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"灰度发布\",\"流量打标\",\"路由规则\",\"网关\"]",
+    "principles": "灰度发布中，请求进入时根据IP、用户ID、设备指纹等提取特征生成稳定标签，如按用户ID取模决定是否进入灰度池。路由规则通过配置中心维护，如5%用户流量切到v2或特定用户组全量切。网关或客户端负载均衡组件监听配置变化实时更新路由逻辑。示例：String uid = request.getHeader(\"X-User-ID\"); int hash = Math.abs(uid.hashCode()) % 100; String version = hash < grayRatio ? \"v2\" : \"v1\";",
+    "pitfalls": "常见错误是标签生成不稳定导致用户在不同版本间跳变；或路由规则更新不及时造成流量错误。面试陷阱可能问如何保证标签的稳定性和一致性，以及灰度比例动态调整的原子性。"
+  },
+  {
+    "subject": "灰度发布渐进式放量与监控回滚",
+    "category": "后端场景题",
+    "difficulty": "中等",
+    "tags": "[\"灰度发布\",\"渐进式放量\",\"监控\",\"回滚\"]",
+    "principles": "灰度发布采用渐进式放量策略，从1%开始观察监控指标（错误率、延迟、业务埋点），无问题后手动或自动提升到5%→20%→100%。整个过程配合CI/CD流水线，支持一键回滚。日志和链路追踪需带上版本标记，方便排查问题。",
+    "pitfalls": "常见错误是监控指标不全面或阈值设置不合理，导致问题未及时发现；或回滚机制不完善造成影响扩大。面试陷阱可能问如何自动判断放量条件，以及回滚时如何处理已产生的脏数据。"
+  },
+  {
+    "subject": "分布式事务方案选型：AT、TCC、消息方案对比",
+    "category": "后端场景题",
+    "difficulty": "困难",
+    "tags": "[\"分布式事务\",\"方案选型\",\"AT\",\"TCC\",\"消息\"]",
+    "principles": "分布式事务方案选型需根据系统容忍度和复杂度：Seata AT模式对业务侵入小，适合快速落地，但性能不如TCC；TCC性能最好但开发成本高，需编写Try、Confirm、Cancel三个方法，适合高并发资金场景；可靠消息+最终一致性方案适合异步场景，开发成本较低，但需处理消息重复和补偿。极端情况如网络超时不确定支付状态时，不能直接回滚，需走TCC模式。",
+    "pitfalls": "常见错误是盲目选择单一方案，忽略业务场景特点；或未考虑方案对现有系统的侵入性。面试陷阱可能问如何评估不同方案的优缺点，以及混合使用多种方案的场景。"
+  }
+]

@@ -49,6 +49,7 @@
     </div>
 </div>
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="/js/jquery-lite.js"></script>
 <script>
 function refreshCaptcha() {
     $('#captchaImage').attr('src', '/api/user/captcha?t=' + Date.now());

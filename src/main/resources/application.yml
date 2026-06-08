@@ -1,5 +1,10 @@
 server:
   port: 8080
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
 
 spring:
   application:
@@ -13,6 +18,10 @@ spring:
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:}
 
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
 
   mvc:
     view:
@@ -30,7 +39,15 @@ mybatis-plus:
     map-underscore-to-camel-case: true
 
 knowledge:
-  categories: Java基础,Spring,SpringBoot,MyBatis,MySQL,Redis,JVM,并发编程,分布式系统,微服务,设计模式,数据结构与算法,计算机网络,操作系统,前端技术,软件工程
+  categories: 大模型,Java基础,Spring,SpringBoot,MyBatis,MySQL,Redis,JVM,并发编程,分布式系统,微服务,设计模式,数据结构与算法,计算机网络,操作系统,前端技术,软件工程
+
+markitdown:
+  python-path: ${MARKITDOWN_PYTHON:E:/Develop/tools/.venv/Scripts/python.exe}
+  upload-dir: ${MARKITDOWN_UPLOAD_DIR:target/markitdown-uploads}
+  timeout-seconds: 60
+  max-markdown-chars: 300000
+  chunk-target-chars: 1000
+  chunk-overlap-chars: 150
 
 langchain4j:
   open-ai:

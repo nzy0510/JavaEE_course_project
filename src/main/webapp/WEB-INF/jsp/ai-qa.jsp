@@ -2,7 +2,7 @@
 <%@ include file="header.jsp" %>
 
 <h3><i class="bi bi-robot"></i> AI 智能问答</h3>
-<p class="text-muted">输入技术问题，AI 将基于知识库内容为您生成回答</p>
+<p class="text-muted">输入技术问题，系统会先改写检索问题，再从文档切片中召回 top3 内容辅助回答。</p>
 
 <div class="row">
     <div class="col-md-8">
@@ -11,7 +11,7 @@
                 <div class="mb-3">
                     <label class="form-label fw-bold">输入您的问题</label>
                     <textarea class="form-control" id="question" rows="3"
-                              placeholder="例如：什么是依赖注入？请解释 Spring Boot 的自动配置原理..."></textarea>
+                              placeholder="例如：RAG 的完整流程是什么？LoRA 微调适合什么场景？"></textarea>
                 </div>
                 <button class="btn btn-primary" id="askBtn" onclick="ask()">
                     <i class="bi bi-send"></i> 提问
@@ -29,10 +29,10 @@
             <div class="card-header">使用说明</div>
             <div class="card-body">
                 <ul class="small">
-                    <li>系统会先在知识库中检索相关内容</li>
-                    <li>基于检索结果，由 AI 生成回答</li>
-                    <li>目前基于 DeepSeek Chat 模型</li>
-                    <li>答案仅供参考，请以实际为准</li>
+                    <li>模型会先把问题改写成检索查询</li>
+                    <li>系统从文档切片中召回 top3 片段</li>
+                    <li>回答会受到召回资料约束</li>
+                    <li>未配置模型时会返回检索片段和配置提示</li>
                 </ul>
             </div>
         </div>

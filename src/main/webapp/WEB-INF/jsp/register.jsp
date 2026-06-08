@@ -40,6 +40,7 @@
     </div>
 </div>
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="/js/jquery-lite.js"></script>
 <script>
 $('#registerForm').on('submit', function(e) {
     e.preventDefault();

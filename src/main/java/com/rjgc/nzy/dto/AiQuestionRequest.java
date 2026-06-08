@@ -8,4 +8,6 @@ public class AiQuestionRequest {
 
     @NotBlank(message = "问题不能为空")
     private String question;
+
+    private String knowledgeCategory;
 }

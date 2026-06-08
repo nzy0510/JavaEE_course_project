@@ -19,13 +19,19 @@ public class AiService {
     private final ObjectProvider<OpenAiChatModel> chatModelProvider;
 
     public String ask(String question) {
+        return ask(question, null);
+    }
+
+    public String ask(String question, String knowledgeCategory) {
         OpenAiChatModel chatModel = chatModelProvider.getIfAvailable();
         List<String> queries = rewriteQueries(question, chatModel);
-        List<ChunkSearchResult> results = knowledgeDocumentService.searchForAi(queries, RETRIEVAL_LIMIT);
+        List<ChunkSearchResult> results = knowledgeDocumentService.searchForAi(queries, RETRIEVAL_LIMIT, knowledgeCategory);
         String context = buildContext(results);
+        String scope = normalizeScope(knowledgeCategory);
 
         if (chatModel == null) {
             return "AI 服务未配置：请设置环境变量 DEEPSEEK_API_KEY 后重启应用。"
+                    + "\n\n当前限定分类：" + scope
                     + "\n\n当前检索查询：\n" + String.join("\n", queries)
                     + "\n\n当前检索到的知识库内容：\n" + context;
         }
@@ -38,15 +44,19 @@ public class AiService {
                 【知识库片段】
                 %s
 
+                【限定知识分类】
+                %s
+
                 【用户原始问题】
                 %s
 
-                请用中文回答，结构清晰、简洁明了。""".formatted(context, question);
+                请用中文回答，结构清晰、简洁明了。""".formatted(context, scope, question);
 
         try {
             return chatModel.generate(prompt);
         } catch (RuntimeException e) {
             return "AI 服务调用失败，请检查 DEEPSEEK_API_KEY、网络或模型额度配置。"
+                    + "\n\n当前限定分类：" + scope
                     + "\n\n当前检索查询：\n" + String.join("\n", queries)
                     + "\n\n当前检索到的知识库内容：\n" + context;
         }
@@ -111,5 +121,9 @@ public class AiService {
 
     private String nullToDefault(String value, String defaultValue) {
         return value == null || value.isBlank() ? defaultValue : value;
+    }
+
+    private String normalizeScope(String knowledgeCategory) {
+        return knowledgeCategory == null || knowledgeCategory.isBlank() ? "全部分类" : knowledgeCategory.trim();
     }
 }

@@ -32,8 +32,11 @@ public class KnowledgeDocumentService {
 
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of(
             "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "html", "htm", "md", "txt");
+    private static final Set<String> GENERIC_INTENT_TERMS = Set.of(
+            "原理", "流程", "策略", "区别", "思路", "步骤", "方法", "场景", "应用");
     private static final int MIN_MATCH_SCORE = 3;
     private static final int MAX_TERMS_PER_QUERY = 10;
+    private static final int CANDIDATE_LIMIT = 200;
 
     private final KnowledgeDocumentMapper documentMapper;
     private final KnowledgeChunkMapper chunkMapper;
@@ -152,6 +155,10 @@ public class KnowledgeDocumentService {
     }
 
     public List<ChunkSearchResult> searchForAi(List<String> queries, int limit) {
+        return searchForAi(queries, limit, null);
+    }
+
+    public List<ChunkSearchResult> searchForAi(List<String> queries, int limit, String knowledgeCategory) {
         List<String> normalizedQueries = queries == null ? List.of() : queries.stream()
                 .filter(query -> query != null && !query.isBlank())
                 .map(String::trim)
@@ -166,9 +173,25 @@ public class KnowledgeDocumentService {
         if (terms.isEmpty()) {
             return List.of();
         }
+        Set<String> specificTerms = terms.stream()
+                .filter(term -> !isGenericIntentTerm(term))
+                .collect(Collectors.toSet());
+        Set<String> searchableTerms = specificTerms.isEmpty() ? terms : specificTerms;
+
+        List<KnowledgeDocument> scopedDocuments = findScopedDocuments(knowledgeCategory);
+        if (knowledgeCategory != null && !knowledgeCategory.isBlank() && scopedDocuments.isEmpty()) {
+            return List.of();
+        }
+        Set<Long> scopedDocumentIds = scopedDocuments.stream()
+                .map(KnowledgeDocument::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
 
         LambdaQueryWrapper<KnowledgeChunk> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(KnowledgeChunk::getStatus, "ACTIVE");
+        if (!scopedDocumentIds.isEmpty()) {
+            wrapper.in(KnowledgeChunk::getDocumentId, scopedDocumentIds);
+        }
         wrapper.and(w -> {
             boolean first = true;
             for (String query : normalizedQueries) {
@@ -181,16 +204,24 @@ public class KnowledgeDocumentService {
                             .or().like(KnowledgeChunk::getContent, query);
                 }
             }
-            for (String term : terms) {
+            for (String term : searchableTerms) {
                 w.or().like(KnowledgeChunk::getTitlePath, term)
                         .or().like(KnowledgeChunk::getContent, term);
             }
         });
         wrapper.orderByDesc(KnowledgeChunk::getCreateTime);
-        wrapper.last("LIMIT " + Math.max(limit * 20, 50));
+        wrapper.last("LIMIT " + Math.max(limit * 50, CANDIDATE_LIMIT));
 
         List<KnowledgeChunk> chunks = chunkMapper.selectList(wrapper);
-        Map<Long, KnowledgeDocument> documents = loadDocuments(chunks);
+        if (!scopedDocumentIds.isEmpty()) {
+            chunks = chunks.stream()
+                    .filter(chunk -> scopedDocumentIds.contains(chunk.getDocumentId()))
+                    .toList();
+        }
+        Map<Long, KnowledgeDocument> documents = scopedDocuments.isEmpty()
+                ? loadDocuments(chunks)
+                : scopedDocuments.stream()
+                .collect(Collectors.toMap(KnowledgeDocument::getId, Function.identity(), (left, right) -> left));
         return chunks.stream()
                 .map(chunk -> new ChunkSearchResult(chunk, documents.get(chunk.getDocumentId()),
                         calculateScore(chunk, normalizedQueries, terms)))
@@ -205,6 +236,15 @@ public class KnowledgeDocumentService {
             return List.of();
         }
         return searchForAi(List.of(keyword.trim()), Math.max(1, Math.min(limit, 50)));
+    }
+
+    private List<KnowledgeDocument> findScopedDocuments(String knowledgeCategory) {
+        if (knowledgeCategory == null || knowledgeCategory.isBlank()) {
+            return List.of();
+        }
+        return documentMapper.selectList(new LambdaQueryWrapper<KnowledgeDocument>()
+                .eq(KnowledgeDocument::getStatus, "ACTIVE")
+                .eq(KnowledgeDocument::getKnowledgeCategory, knowledgeCategory.trim()));
     }
 
     private Map<Long, KnowledgeDocument> loadDocuments(List<KnowledgeChunk> chunks) {
@@ -237,11 +277,13 @@ public class KnowledgeDocumentService {
             if (normalizedTerm.isBlank()) {
                 continue;
             }
+            int titleWeight = isGenericIntentTerm(normalizedTerm) ? 1 : 5;
+            int contentWeight = isGenericIntentTerm(normalizedTerm) ? 1 : 3;
             if (title.contains(normalizedTerm)) {
-                score += 5;
+                score += titleWeight;
             }
             if (content.contains(normalizedTerm)) {
-                score += 3;
+                score += contentWeight;
             }
         }
         if (content.length() > 1500) {
@@ -286,6 +328,10 @@ public class KnowledgeDocumentService {
 
     private boolean isChinese(String value) {
         return value != null && value.matches(".*[\\u4e00-\\u9fa5].*");
+    }
+
+    private boolean isGenericIntentTerm(String value) {
+        return value != null && GENERIC_INTENT_TERMS.contains(value.trim().toLowerCase(Locale.ROOT));
     }
 
     private String extractExtension(String filename) {

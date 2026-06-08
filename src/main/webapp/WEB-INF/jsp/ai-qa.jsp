@@ -9,6 +9,12 @@
         <div class="card">
             <div class="card-body">
                 <div class="mb-3">
+                    <label class="form-label fw-bold">知识分类</label>
+                    <select class="form-select" id="knowledgeCategory">
+                        <option value="">全部分类</option>
+                    </select>
+                </div>
+                <div class="mb-3">
                     <label class="form-label fw-bold">输入您的问题</label>
                     <textarea class="form-control" id="question" rows="3"
                               placeholder="例如：RAG 的完整流程是什么？LoRA 微调适合什么场景？"></textarea>
@@ -29,6 +35,7 @@
             <div class="card-header">使用说明</div>
             <div class="card-body">
                 <ul class="small">
+                    <li>可先选择问题所属知识分类，减少跨题库误召回</li>
                     <li>模型会先把问题改写成检索查询</li>
                     <li>系统从文档切片中召回 top3 片段</li>
                     <li>回答会受到召回资料约束</li>
@@ -40,19 +47,38 @@
 </div>
 
 <script>
+$(function() {
+    loadKnowledgeCategories();
+});
+
+function loadKnowledgeCategories() {
+    $.get('/api/knowledge/stats', function(res) {
+        if (res.code !== 200 || !res.data) return;
+        var options = '<option value="">全部分类</option>';
+        (res.data.categoryStats || []).forEach(function(item) {
+            options += '<option value="' + escapeHtml(item.category) + '">' + escapeHtml(item.category) + '</option>';
+        });
+        $('#knowledgeCategory').html(options);
+    });
+}
+
 function ask() {
     var question = $('#question').val().trim();
+    var knowledgeCategory = $('#knowledgeCategory').val();
     if (!question) return;
 
     $('#askBtn').prop('disabled', true);
     $('#loading').removeClass('d-none');
-    $('#answerArea').prepend('<div class="card mb-3 border-primary"><div class="card-header"><strong>您的问题：</strong>' + escapeHtml(question) + '</div></div>');
+    $('#answerArea').prepend('<div class="card mb-3 border-primary"><div class="card-header"><strong>您的问题：</strong>'
+        + escapeHtml(question)
+        + '<span class="badge bg-light text-dark border ms-2">' + escapeHtml(knowledgeCategory || '全部分类') + '</span>'
+        + '</div></div>');
 
     $.ajax({
         url: '/api/ai/ask',
         type: 'POST',
         contentType: 'application/json',
-        data: JSON.stringify({ question: question }),
+        data: JSON.stringify({ question: question, knowledgeCategory: knowledgeCategory }),
         success: function(res) {
             var answerHtml = '<div class="card mb-3 border-success">'
                 + '<div class="card-header bg-success text-white"><strong>AI 回答</strong></div>'

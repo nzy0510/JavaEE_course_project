@@ -19,7 +19,7 @@ public class AiController {
 
     @PostMapping("/ask")
     public Result<String> ask(@Valid @RequestBody AiQuestionRequest request) {
-        String answer = aiService.ask(request.getQuestion());
+        String answer = aiService.ask(request.getQuestion(), request.getKnowledgeCategory());
         return Result.ok(answer);
     }
 }

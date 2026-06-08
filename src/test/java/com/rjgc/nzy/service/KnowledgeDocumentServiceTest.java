@@ -116,6 +116,51 @@ class KnowledgeDocumentServiceTest {
     }
 
     @Test
+    void searchForAiRanksSpecificTechnicalTermsAboveGenericIntentWords() {
+        KnowledgeChunk mysql = chunk(1L,
+                "MySQL 中 EXISTS 和 IN 的区别是什么?",
+                "EXISTS 和 IN 都用来处理子查询,但底层玩法完全不同,区别在执行方式。");
+        KnowledgeChunk rag = chunk(2L,
+                "未命名片段",
+                "Embedding 用来表示文本语义,RAG 通过检索增强生成把外部资料放入提示词。");
+        mysql.setDocumentId(20L);
+        rag.setDocumentId(10L);
+        KnowledgeDocument aiDocument = new KnowledgeDocument();
+        aiDocument.setId(10L);
+        aiDocument.setOriginalFilename("AI大模型题库.pdf");
+        KnowledgeDocument mysqlDocument = new KnowledgeDocument();
+        mysqlDocument.setId(20L);
+        mysqlDocument.setOriginalFilename("MySQL题库.pdf");
+        when(chunkMapper.selectList(any())).thenReturn(List.of(mysql, rag));
+        when(documentMapper.selectBatchIds(anyDocumentIdCollection())).thenReturn(List.of(aiDocument, mysqlDocument));
+
+        List<ChunkSearchResult> results = service.searchForAi(List.of("Embedding 和 RAG 的区别？"), 2);
+
+        assertThat(results).isNotEmpty();
+        assertThat(results.get(0).getDocument().getOriginalFilename()).isEqualTo("AI大模型题库.pdf");
+    }
+
+    @Test
+    void searchForAiFiltersChunksBySelectedKnowledgeCategory() {
+        KnowledgeChunk mysql = chunk(1L, "RAG 在 MySQL 文档中的误命中", "这里故意包含 RAG 关键字。");
+        KnowledgeChunk rag = chunk(2L, "RAG 的完整流程", "RAG 包括检索召回和生成答案。");
+        mysql.setDocumentId(20L);
+        rag.setDocumentId(10L);
+        KnowledgeDocument aiDocument = new KnowledgeDocument();
+        aiDocument.setId(10L);
+        aiDocument.setOriginalFilename("AI大模型题库.pdf");
+        aiDocument.setKnowledgeCategory("大模型");
+        when(documentMapper.selectList(any())).thenReturn(List.of(aiDocument));
+        when(chunkMapper.selectList(any())).thenReturn(List.of(mysql, rag));
+
+        List<ChunkSearchResult> results = service.searchForAi(List.of("RAG 流程"), 3, "大模型");
+
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).getChunk().getDocumentId()).isEqualTo(10L);
+        assertThat(results.get(0).getDocument().getKnowledgeCategory()).isEqualTo("大模型");
+    }
+
+    @Test
     void statsIncludesActiveKnowledgeCategoryDistribution() {
         when(documentMapper.selectCount(any())).thenReturn(3L, 2L, 1L);
         when(chunkMapper.selectCount(any())).thenReturn(12L);

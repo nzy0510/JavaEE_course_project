@@ -141,6 +141,27 @@ class KnowledgeDocumentServiceTest {
     }
 
     @Test
+    void searchForAiDistinguishesRepeatedTechnicalTermMatches() {
+        KnowledgeChunk brief = chunk(1L,
+                "RAG 的完整流程",
+                "RAG 的完整流程是什么? RAG 包括检索和生成。");
+        KnowledgeChunk detailed = chunk(2L,
+                "RAG 的完整流程",
+                "RAG 的完整流程是什么? RAG 包括文档切分、Embedding 表示、RAG 检索召回、RAG 生成答案。");
+        KnowledgeDocument document = new KnowledgeDocument();
+        document.setId(10L);
+        document.setOriginalFilename("AI大模型题库.pdf");
+        when(chunkMapper.selectList(any())).thenReturn(List.of(brief, detailed));
+        when(documentMapper.selectBatchIds(anyDocumentIdCollection())).thenReturn(List.of(document));
+
+        List<ChunkSearchResult> results = service.searchForAi(List.of("RAG 流程"), 2);
+
+        assertThat(results).hasSize(2);
+        assertThat(results.get(0).getChunk().getContent()).contains("Embedding");
+        assertThat(results.get(0).getScore()).isGreaterThan(results.get(1).getScore());
+    }
+
+    @Test
     void searchForAiFiltersChunksBySelectedKnowledgeCategory() {
         KnowledgeChunk mysql = chunk(1L, "RAG 在 MySQL 文档中的误命中", "这里故意包含 RAG 关键字。");
         KnowledgeChunk rag = chunk(2L, "RAG 的完整流程", "RAG 包括检索召回和生成答案。");

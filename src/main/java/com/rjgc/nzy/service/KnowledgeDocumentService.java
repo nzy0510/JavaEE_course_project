@@ -265,12 +265,8 @@ public class KnowledgeDocumentService {
         String content = normalize(chunk.getContent());
         for (String query : queries) {
             String normalizedQuery = normalize(query);
-            if (!normalizedQuery.isEmpty() && title.contains(normalizedQuery)) {
-                score += 12;
-            }
-            if (!normalizedQuery.isEmpty() && content.contains(normalizedQuery)) {
-                score += 8;
-            }
+            score += boundedOccurrences(title, normalizedQuery, 2) * 12;
+            score += boundedOccurrences(content, normalizedQuery, 2) * 8;
         }
         for (String term : terms) {
             String normalizedTerm = normalize(term);
@@ -279,17 +275,30 @@ public class KnowledgeDocumentService {
             }
             int titleWeight = isGenericIntentTerm(normalizedTerm) ? 1 : 5;
             int contentWeight = isGenericIntentTerm(normalizedTerm) ? 1 : 3;
-            if (title.contains(normalizedTerm)) {
-                score += titleWeight;
-            }
-            if (content.contains(normalizedTerm)) {
-                score += contentWeight;
-            }
+            score += boundedOccurrences(title, normalizedTerm, 3) * titleWeight;
+            score += boundedOccurrences(content, normalizedTerm, 5) * contentWeight;
         }
         if (content.length() > 1500) {
             score -= 1;
         }
         return score;
+    }
+
+    private int boundedOccurrences(String source, String needle, int max) {
+        if (source == null || source.isBlank() || needle == null || needle.isBlank() || max <= 0) {
+            return 0;
+        }
+        int count = 0;
+        int index = 0;
+        while (count < max) {
+            index = source.indexOf(needle, index);
+            if (index < 0) {
+                break;
+            }
+            count++;
+            index += needle.length();
+        }
+        return count;
     }
 
     private List<String> extractTerms(String query) {

@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -48,19 +49,22 @@ public class DocumentConversionService {
                 "-m",
                 "markitdown",
                 tempFile.toString());
-        builder.redirectErrorStream(true);
+        builder.environment().put("PYTHONUTF8", "1");
+        builder.environment().put("PYTHONIOENCODING", "utf-8");
         try {
             Instant started = Instant.now();
             Process process = builder.start();
-            CompletableFuture<String> outputFuture = CompletableFuture.supplyAsync(() -> readOutput(process));
+            CompletableFuture<String> outputFuture = CompletableFuture.supplyAsync(() -> readStream(process.getInputStream()));
+            CompletableFuture<String> errorFuture = CompletableFuture.supplyAsync(() -> readStream(process.getErrorStream()));
             boolean finished = process.waitFor(properties.getTimeoutSeconds(), TimeUnit.SECONDS);
             if (!finished) {
                 process.destroyForcibly();
                 throw new RuntimeException("MarkItDown 转换超时，超过 " + properties.getTimeoutSeconds() + " 秒");
             }
             String output = outputFuture.get();
+            String error = errorFuture.get();
             if (process.exitValue() != 0) {
-                throw new RuntimeException("MarkItDown 转换失败: " + abbreviate(output));
+                throw new RuntimeException("MarkItDown 转换失败: " + abbreviate(output + "\n" + error));
             }
             if (output.length() > properties.getMaxMarkdownChars()) {
                 throw new RuntimeException("转换后的 Markdown 超过限制: " + output.length());
@@ -76,9 +80,9 @@ public class DocumentConversionService {
         }
     }
 
-    private String readOutput(Process process) {
+    private String readStream(InputStream inputStream) {
         try {
-            return new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            return new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

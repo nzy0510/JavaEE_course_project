@@ -13,6 +13,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="/js/jquery-lite.js"></script>
+    <script src="/js/app-common.js"></script>
 </head>
 <body>
 <% if (user != null) { %>

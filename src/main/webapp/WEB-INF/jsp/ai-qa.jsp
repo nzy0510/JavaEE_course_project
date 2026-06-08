@@ -72,11 +72,6 @@ function ask() {
 }
 
 function clearChat() { $('#answerArea').html(''); }
-
-function escapeHtml(text) {
-    if (!text) return '';
-    return text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
 </script>
 
 <%@ include file="footer.jsp" %>

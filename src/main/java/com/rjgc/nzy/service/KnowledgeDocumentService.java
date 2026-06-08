@@ -20,7 +20,10 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -61,7 +64,6 @@ public class KnowledgeDocumentService {
 
         try {
             String markdown = conversionService.convert(file, extension).markdown();
-            document.setKnowledgeCategory(categoryClassifier.classify(document.getOriginalFilename(), markdown));
             List<MarkdownSection> sections = chunker.chunk(markdown);
             if (sections.isEmpty()) {
                 throw new RuntimeException("文档未转换出有效文本内容");
@@ -187,8 +189,11 @@ public class KnowledgeDocumentService {
         wrapper.orderByDesc(KnowledgeChunk::getCreateTime);
         wrapper.last("LIMIT " + Math.max(limit * 20, 50));
 
-        return chunkMapper.selectList(wrapper).stream()
-                .map(chunk -> toSearchResult(chunk, normalizedQueries, terms))
+        List<KnowledgeChunk> chunks = chunkMapper.selectList(wrapper);
+        Map<Long, KnowledgeDocument> documents = loadDocuments(chunks);
+        return chunks.stream()
+                .map(chunk -> new ChunkSearchResult(chunk, documents.get(chunk.getDocumentId()),
+                        calculateScore(chunk, normalizedQueries, terms)))
                 .filter(result -> result.getScore() >= MIN_MATCH_SCORE)
                 .sorted(Comparator.comparingInt(ChunkSearchResult::getScore).reversed())
                 .limit(limit)
@@ -202,9 +207,16 @@ public class KnowledgeDocumentService {
         return searchForAi(List.of(keyword.trim()), Math.max(1, Math.min(limit, 50)));
     }
 
-    private ChunkSearchResult toSearchResult(KnowledgeChunk chunk, List<String> queries, Set<String> terms) {
-        KnowledgeDocument document = documentMapper.selectById(chunk.getDocumentId());
-        return new ChunkSearchResult(chunk, document, calculateScore(chunk, queries, terms));
+    private Map<Long, KnowledgeDocument> loadDocuments(List<KnowledgeChunk> chunks) {
+        Set<Long> documentIds = chunks.stream()
+                .map(KnowledgeChunk::getDocumentId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (documentIds.isEmpty()) {
+            return Map.of();
+        }
+        return documentMapper.selectBatchIds(documentIds).stream()
+                .collect(Collectors.toMap(KnowledgeDocument::getId, Function.identity(), (left, right) -> left));
     }
 
     private int calculateScore(KnowledgeChunk chunk, List<String> queries, Set<String> terms) {

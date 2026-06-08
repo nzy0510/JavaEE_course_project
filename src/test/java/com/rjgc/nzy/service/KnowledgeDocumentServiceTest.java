@@ -11,11 +11,13 @@ import org.springframework.mock.web.MockMultipartFile;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.Collection;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -80,10 +82,11 @@ class KnowledgeDocumentServiceTest {
     void searchChunksKeepsChineseTextReadable() {
         KnowledgeChunk rag = chunk(1L, "RAG 的完整流程", "RAG 包括数据切分、检索召回、生成答案。");
         KnowledgeDocument document = new KnowledgeDocument();
+        document.setId(10L);
         document.setOriginalFilename("AI大模型题库.pdf");
         document.setKnowledgeCategory("大模型");
         when(chunkMapper.selectList(any())).thenReturn(List.of(rag));
-        when(documentMapper.selectById(any())).thenReturn(document);
+        when(documentMapper.selectBatchIds(anyDocumentIdCollection())).thenReturn(List.of(document));
 
         List<ChunkSearchResult> results = service.searchChunks("RAG 流程", 3);
 
@@ -91,6 +94,25 @@ class KnowledgeDocumentServiceTest {
         assertThat(results.get(0).getChunk().getTitlePath()).isEqualTo("RAG 的完整流程");
         assertThat(results.get(0).getChunk().getContent()).contains("检索召回");
         assertThat(results.get(0).getDocument().getOriginalFilename()).isEqualTo("AI大模型题库.pdf");
+    }
+
+    @Test
+    void searchForAiLoadsMatchedDocumentsInOneBatch() {
+        KnowledgeChunk first = chunk(1L, "RAG 流程", "RAG 包括检索召回。");
+        KnowledgeChunk second = chunk(2L, "RAG 应用", "RAG 可以结合大模型生成答案。");
+        first.setDocumentId(10L);
+        second.setDocumentId(10L);
+        KnowledgeDocument document = new KnowledgeDocument();
+        document.setId(10L);
+        document.setOriginalFilename("AI大模型题库.pdf");
+        when(chunkMapper.selectList(any())).thenReturn(List.of(first, second));
+        when(documentMapper.selectBatchIds(anyDocumentIdCollection())).thenReturn(List.of(document));
+
+        List<ChunkSearchResult> results = service.searchForAi(List.of("RAG"), 2);
+
+        assertThat(results).hasSize(2);
+        verify(documentMapper).selectBatchIds(anyDocumentIdCollection());
+        verify(documentMapper, never()).selectById(any());
     }
 
     @Test
@@ -157,5 +179,10 @@ class KnowledgeDocumentServiceTest {
         chunk.setContent(content);
         chunk.setStatus("ACTIVE");
         return chunk;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Collection<Long> anyDocumentIdCollection() {
+        return any(Collection.class);
     }
 }

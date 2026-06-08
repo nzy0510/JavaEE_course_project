@@ -148,6 +148,11 @@
                 if (options.error) {
                     options.error(error);
                 }
+            })
+            .finally(function () {
+                if (options.complete) {
+                    options.complete();
+                }
             });
     };
 

@@ -96,7 +96,7 @@ $(function() {
 
 function renderPie(categories) {
     if (!categories.length) {
-        renderEmpty('#categoryPieChart');
+        renderEmpty('#categoryPieChart', '暂无分类数据');
         return;
     }
     if (typeof echarts !== 'undefined') {
@@ -122,7 +122,7 @@ function renderPie(categories) {
 
 function renderBar(categories) {
     if (!categories.length) {
-        renderEmpty('#categoryBarChart');
+        renderEmpty('#categoryBarChart', '暂无分类数据');
         return;
     }
     if (typeof echarts !== 'undefined') {
@@ -180,22 +180,6 @@ function renderFallbackBars(categories) {
     $('#categoryBarChart').html(html);
 }
 
-function renderEmpty(selector) {
-    $(selector).html('<div class="text-center text-muted pt-5">暂无分类数据</div>');
-}
-
-function sum(items, field) {
-    return items.reduce(function(total, item) { return total + (item[field] || 0); }, 0);
-}
-
-function escapeHtml(text) {
-    return String(text || '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-}
 </script>
 
 <%@ include file="footer.jsp" %>

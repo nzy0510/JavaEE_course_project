@@ -283,37 +283,6 @@ function deleteDoc(id) {
     });
 }
 
-function statusBadge(status) {
-    if (status === 'ACTIVE') return '<span class="badge bg-success">可检索</span>';
-    if (status === 'ARCHIVED') return '<span class="badge bg-secondary">已归档</span>';
-    if (status === 'FAILED') return '<span class="badge bg-danger">失败</span>';
-    return '<span class="badge bg-info">处理中</span>';
-}
-
-function formatSize(value) {
-    if (!value) return '0 B';
-    if (value < 1024) return value + ' B';
-    if (value < 1024 * 1024) return (value / 1024).toFixed(1) + ' KB';
-    return (value / 1024 / 1024).toFixed(1) + ' MB';
-}
-
-function formatDate(value) {
-    return value ? value.substring(0, 19).replace('T', ' ') : '-';
-}
-
-function truncateText(text, maxLength) {
-    text = String(text || '');
-    return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
-}
-
-function escapeHtml(text) {
-    return String(text || '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-}
 </script>
 
 <%@ include file="footer.jsp" %>

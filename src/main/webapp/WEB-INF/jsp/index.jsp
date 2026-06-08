@@ -121,25 +121,6 @@ $(function() {
     });
 });
 
-function statusBadge(status) {
-    if (status === 'ACTIVE') return '<span class="badge bg-success">可检索</span>';
-    if (status === 'ARCHIVED') return '<span class="badge bg-secondary">已归档</span>';
-    if (status === 'FAILED') return '<span class="badge bg-danger">失败</span>';
-    return '<span class="badge bg-info">处理中</span>';
-}
-
-function formatDate(value) {
-    return value ? value.substring(0, 19).replace('T', ' ') : '-';
-}
-
-function escapeHtml(text) {
-    return String(text || '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-}
 </script>
 
 <%@ include file="footer.jsp" %>

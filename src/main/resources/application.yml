@@ -5,6 +5,10 @@ server:
       charset: UTF-8
       enabled: true
       force: true
+    session:
+      cookie:
+        http-only: true
+        same-site: strict
 
 spring:
   application:

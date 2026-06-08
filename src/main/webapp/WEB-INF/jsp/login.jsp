@@ -22,7 +22,7 @@
 <div class="container">
     <div class="card login-card shadow">
         <div class="card-body p-4">
-            <h3 class="text-center mb-4">知识库管理系统</h3>
+            <h3 class="text-center mb-4">面试题库知识库管理系统</h3>
             <form id="loginForm">
                 <div class="mb-3">
                     <label for="username" class="form-label">用户名</label>

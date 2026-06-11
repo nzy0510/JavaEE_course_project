@@ -26,6 +26,14 @@ public class KnowledgeSchemaMigration implements ApplicationRunner {
                         ADD COLUMN knowledge_category VARCHAR(64) NOT NULL DEFAULT '通用知识'
                         """);
             }
+            if (!hasColumn(statement, "`user`", "role")) {
+                statement.execute("""
+                        ALTER TABLE `user`
+                        ADD COLUMN role VARCHAR(32) NOT NULL DEFAULT 'USER'
+                        """);
+            }
+            statement.executeUpdate("UPDATE `user` SET role = 'ADMIN' WHERE username = 'nzy333'");
+            statement.executeUpdate("UPDATE `user` SET role = 'USER' WHERE role IS NULL OR role = ''");
         }
     }
 

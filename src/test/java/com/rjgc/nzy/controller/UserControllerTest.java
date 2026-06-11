@@ -40,6 +40,7 @@ class UserControllerTest {
         User user = new User();
         user.setUsername("nzy");
         user.setPassword("hashed");
+        user.setRole("USER");
         when(captchaService.validate(session, "a8k2")).thenReturn(true);
         when(userService.login("nzy", "secret")).thenReturn(user);
 
@@ -47,6 +48,7 @@ class UserControllerTest {
 
         assertThat(result.getCode()).isEqualTo(200);
         assertThat(result.getData().getPassword()).isNull();
+        assertThat(result.getData().getRole()).isEqualTo("USER");
         assertThat(session.getAttribute("user")).isSameAs(user);
     }
 

@@ -11,6 +11,10 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class UserService {
 
+    private static final String ADMIN_USERNAME = "nzy333";
+    private static final String ROLE_ADMIN = "ADMIN";
+    private static final String ROLE_USER = "USER";
+
     private final UserMapper userMapper;
 
     public User register(String username, String password) {
@@ -22,6 +26,7 @@ public class UserService {
         User user = new User();
         user.setUsername(username);
         user.setPassword(BCrypt.hashpw(password, BCrypt.gensalt(10)));
+        user.setRole(ADMIN_USERNAME.equals(username) ? ROLE_ADMIN : ROLE_USER);
         userMapper.insert(user);
         return user;
     }

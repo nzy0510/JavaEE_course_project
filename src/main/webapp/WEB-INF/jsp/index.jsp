@@ -18,9 +18,11 @@
 <div class="dashboard-head">
     <div>
         <h3><i class="bi bi-house"></i> 文档知识库首页</h3>
-        <p class="text-muted mb-0">查看知识库整体状态，进入文档导入、文档管理、AI 问答和详细统计。</p>
+        <p class="text-muted mb-0">查看知识库整体状态，进入 AI 问答和详细统计。</p>
     </div>
+    <% if (adminUser) { %>
     <a class="btn btn-primary" href="/knowledge-add"><i class="bi bi-cloud-upload"></i> 上传文档</a>
+    <% } %>
 </div>
 
 <div class="row g-3 mb-4">
@@ -55,12 +57,14 @@
 </div>
 
 <div class="row g-4 mb-4">
+    <% if (adminUser) { %>
     <div class="col-md-3">
         <a class="quick-action" href="/knowledge-add"><i class="bi bi-cloud-upload"></i><strong>上传文档</strong><div class="text-muted small mt-2">导入 PDF、Word、Markdown 等资料</div></a>
     </div>
     <div class="col-md-3">
         <a class="quick-action" href="/knowledge-list"><i class="bi bi-files"></i><strong>文档管理</strong><div class="text-muted small mt-2">查询、查看切片、归档和删除文档</div></a>
     </div>
+    <% } %>
     <div class="col-md-3">
         <a class="quick-action" href="/ai-qa"><i class="bi bi-robot"></i><strong>AI 问答</strong><div class="text-muted small mt-2">基于活动切片召回生成答案</div></a>
     </div>
@@ -72,7 +76,9 @@
 <div class="card">
     <div class="card-header bg-white d-flex justify-content-between align-items-center">
         <strong>最近导入文档</strong>
+        <% if (adminUser) { %>
         <a class="small text-decoration-none" href="/knowledge-list">查看全部</a>
+        <% } %>
     </div>
     <div class="card-body">
         <div class="table-responsive">

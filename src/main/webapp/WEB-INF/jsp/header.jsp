@@ -1,7 +1,24 @@
 <%@ page contentType="text/html;charset=UTF-8" language="java" %>
 <%@ page import="com.rjgc.nzy.entity.User" %>
+<%@ page import="java.lang.reflect.Method" %>
 <%
     User user = (User) session.getAttribute("user");
+    boolean adminUser = false;
+    if (user != null) {
+        String role = null;
+        boolean roleAvailable = false;
+        try {
+            Method getRole = user.getClass().getMethod("getRole");
+            roleAvailable = true;
+            Object roleValue = getRole.invoke(user);
+            if (roleValue != null) {
+                role = String.valueOf(roleValue);
+            }
+        } catch (ReflectiveOperationException ignored) {
+            // Current UI worker branch may not have the backend role field yet.
+        }
+        adminUser = "ADMIN".equalsIgnoreCase(role) || (!roleAvailable && "nzy333".equals(user.getUsername()));
+    }
 %>
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -30,12 +47,14 @@
                 <li class="nav-item">
                     <a class="nav-link" href="/index"><i class="bi bi-house"></i> 首页</a>
                 </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="/knowledge-add"><i class="bi bi-cloud-upload"></i> 上传文档</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="/knowledge-list"><i class="bi bi-files"></i> 文档管理</a>
-                </li>
+                <% if (adminUser) { %>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/knowledge-add"><i class="bi bi-cloud-upload"></i> 上传文档</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/knowledge-list"><i class="bi bi-files"></i> 文档管理</a>
+                    </li>
+                <% } %>
                 <li class="nav-item">
                     <a class="nav-link" href="/ai-qa"><i class="bi bi-robot"></i> AI 问答</a>
                 </li>

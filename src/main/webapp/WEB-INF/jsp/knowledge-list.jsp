@@ -22,7 +22,9 @@
         <h3><i class="bi bi-files"></i> 文档管理</h3>
         <p class="text-muted mb-0">按文件名管理导入文档，也可按关键词检索活动切片内容。</p>
     </div>
+    <% if (adminUser) { %>
     <a class="btn btn-primary" href="/knowledge-add"><i class="bi bi-cloud-upload"></i> 上传文档</a>
+    <% } %>
 </div>
 
 <div class="row g-4 mb-4">
@@ -120,6 +122,7 @@
 
 <script>
 var currentPage = 1;
+var isAdmin = <%= adminUser %>;
 
 $(function() {
     loadList();
@@ -150,12 +153,14 @@ function loadList() {
             var rows = '';
             data.records.forEach(function(item) {
                 var actions = '<button class="btn btn-sm btn-outline-primary me-1" onclick="viewChunks(' + item.id + ')"><i class="bi bi-card-text"></i> 切片</button>';
-                if (item.status === 'ACTIVE') {
-                    actions += '<button class="btn btn-sm btn-outline-warning me-1" onclick="archiveDoc(' + item.id + ')">归档</button>';
-                } else if (item.status === 'ARCHIVED') {
-                    actions += '<button class="btn btn-sm btn-outline-success me-1" onclick="restoreDoc(' + item.id + ')">恢复</button>';
+                if (isAdmin) {
+                    if (item.status === 'ACTIVE') {
+                        actions += '<button class="btn btn-sm btn-outline-warning me-1" onclick="archiveDoc(' + item.id + ')">归档</button>';
+                    } else if (item.status === 'ARCHIVED') {
+                        actions += '<button class="btn btn-sm btn-outline-success me-1" onclick="restoreDoc(' + item.id + ')">恢复</button>';
+                    }
+                    actions += '<button class="btn btn-sm btn-outline-danger" onclick="deleteDoc(' + item.id + ')">删除</button>';
                 }
-                actions += '<button class="btn btn-sm btn-outline-danger" onclick="deleteDoc(' + item.id + ')">删除</button>';
 
                 rows += '<tr>'
                     + '<td>' + item.id + '</td>'

@@ -22,7 +22,9 @@
         <h3><i class="bi bi-bar-chart"></i> 详细统计</h3>
         <p class="text-muted mb-0">展示题库分类及活动切片占比，以及各知识分类的活动切片数量。</p>
     </div>
+    <% if (adminUser) { %>
     <a class="btn btn-outline-primary" href="/knowledge-list"><i class="bi bi-files"></i> 返回文档管理</a>
+    <% } %>
 </div>
 
 <div class="row g-3 mb-4">
